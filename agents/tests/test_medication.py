@@ -10,7 +10,7 @@ from models import AgentResponse
 async def test_run_returns_agent_response(mock_gemini, firestore_empty):
     db, _ = firestore_empty
     with patch("memory._get_db", return_value=db):
-        from agents.medication import run
+        from adk.medication.agent import run
         result = await run("demo_user", "When do I take aspirin?")
     assert isinstance(result, AgentResponse)
     assert result.agent == "medication"
@@ -34,7 +34,7 @@ async def test_run_injects_memory_into_prompt(firestore_medication):
             "vertexai.generative_models.GenerativeModel.generate_content_async",
             side_effect=fake_generate,
         ):
-            import agents.medication as med
+            import adk.medication.agent as med
             importlib.reload(med)
             await med.run("demo_user", "When do I take aspirin?")
 
@@ -45,6 +45,6 @@ async def test_run_injects_memory_into_prompt(firestore_medication):
 async def test_run_writes_memory_after_response(mock_gemini, firestore_empty):
     db, doc_ref = firestore_empty
     with patch("memory._get_db", return_value=db):
-        from agents.medication import run
+        from adk.medication.agent import run
         await run("demo_user", "I just took my aspirin")
     doc_ref.set.assert_called_once()

@@ -20,7 +20,7 @@ def firestore_exercise():
 async def test_run_returns_agent_response(mock_gemini, firestore_empty):
     db, _ = firestore_empty
     with patch("memory._get_db", return_value=db):
-        from agents.exercise import run
+        from adk.exercise.agent import run
         result = await run("demo_user", "Let's stretch")
     assert isinstance(result, AgentResponse)
     assert result.agent == "exercise"
@@ -43,7 +43,7 @@ async def test_run_injects_history_into_prompt(firestore_exercise):
             "vertexai.generative_models.GenerativeModel.generate_content_async",
             side_effect=fake_generate,
         ):
-            import agents.exercise as ex
+            import adk.exercise.agent as ex
             importlib.reload(ex)
             await ex.run("demo_user", "I did stretching today")
 
@@ -54,7 +54,7 @@ async def test_run_injects_history_into_prompt(firestore_exercise):
 async def test_run_updates_streak(mock_gemini, firestore_empty):
     db, doc_ref = firestore_empty
     with patch("memory._get_db", return_value=db):
-        from agents.exercise import run
+        from adk.exercise.agent import run
         await run("demo_user", "I finished my exercises")
     doc_ref.set.assert_called_once()
     saved = doc_ref.set.call_args[0][0]
