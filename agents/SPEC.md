@@ -1,21 +1,22 @@
 # Agents Spec — Dev 3
 
 ## Overview
-Python FastAPI service at port 8000. Handles all AI logic using **Google ADK** (Agent Development Kit) with **Vertex AI Gemini** models. Implements a multi-agent architecture: a router agent dispatches to specialized domain agents. Some agents have **long-term memory backed by Firestore**.
+Python FastAPI service at port 8000. Handles all AI logic using **Google ADK** (Agent Development Kit) with **Vertex AI Gemini** models. Implements a multi-agent architecture: a root orchestrator delegates to specialised domain agents. All agents read from **Firestore** (flat collections). Emergency alerts are sent via **Telegram Bot API**.
 
 ## Stack
 - Python 3.11+
 - FastAPI + Uvicorn
 - `google-adk` — Google Agent Development Kit
 - `google-cloud-aiplatform` — Vertex AI SDK
-- `google-cloud-firestore` — long-term agent memory + session storage
+- `google-cloud-firestore` — agent memory + session storage
 - `google-cloud-storage` — media upload for vision/video responses
 - `vertexai` — Gemini model access
+- `httpx` — async HTTP (Telegram, weather, news RSS)
 
 ## Environment Variables
 ```
-GOOGLE_CLOUD_PROJECT=oonook-demo
-GOOGLE_CLOUD_LOCATION=us-central1
+GOOGLE_CLOUD_PROJECT=woven-bonbon-485514-h5
+GOOGLE_CLOUD_LOCATION=europe-west1
 GCS_BUCKET=oonook-media
 GOOGLE_APPLICATION_CREDENTIALS=/secrets/sa.json
 ```
@@ -23,26 +24,25 @@ GOOGLE_APPLICATION_CREDENTIALS=/secrets/sa.json
 ## Models
 | Use case | Model |
 |---|---|
-| Chat / text agents | `gemini-1.5-flash` |
+| Router + text agents | `gemini-1.5-flash` |
+| Root orchestrator | `gemini-1.5-pro` |
 | Vision / video | `gemini-1.5-pro` |
 
 ## Endpoints
 
 ### POST /chat
-Frontend sends audio; agents decode and pass to Gemini which handles STT natively.
 ```json
 // Request
-{ "user_id": "demo_user", "audio_base64": "<base64 encoded m4a audio>" }
+{ "user_id": "nikola", "message": "When do I take my aspirin?" }
 
 // Response
 { "response": "You take Aspirin at 8am and 8pm.", "agent": "medication", "media": null }
 ```
-Gemini 1.5 Flash accepts audio natively — no separate STT step needed. Decode base64 → pass raw audio bytes as inline media part to Gemini.
 
 ### POST /vision
 ```json
 // Request
-{ "user_id": "demo_user", "image_base64": "data:image/jpeg;base64,..." }
+{ "user_id": "nikola", "image_base64": "data:image/jpeg;base64,..." }
 
 // Response
 { "response": "This is Aspirin 100mg.", "agent": "vision", "media": { "type": "image", "url": "https://storage.googleapis.com/..." } }
@@ -51,7 +51,7 @@ Gemini 1.5 Flash accepts audio natively — no separate STT step needed. Decode 
 ### POST /video
 ```json
 // Request
-{ "user_id": "demo_user", "video_base64": "data:video/mp4;base64,..." }
+{ "user_id": "nikola", "video_base64": "data:video/mp4;base64,..." }
 
 // Response
 { "response": "I can see you doing the exercise correctly.", "agent": "vision", "media": { "type": "video", "url": "https://storage.googleapis.com/..." } }
@@ -61,7 +61,7 @@ Gemini 1.5 Flash accepts audio natively — no separate STT step needed. Decode 
 Triggered by the backend scheduler every 6 hours to regenerate AI-based reminders for a user.
 ```json
 // Request
-{ "user_id": "demo_user" }
+{ "user_id": "nikola" }
 
 // Response
 { "status": "ok", "count": 12 }
@@ -75,7 +75,7 @@ Triggered by the backend scheduler every 6 hours to regenerate AI-based reminder
 Creates a single custom reminder from a voice/text message. Permanent — never overwritten by scheduled generation.
 ```json
 // Request
-{ "user_id": "demo_user", "message": "Remind me to drink water every morning" }
+{ "user_id": "nikola", "message": "Remind me to drink water every morning" }
 
 // Response
 { "status": "ok" }
@@ -97,13 +97,18 @@ POST /chat
 router.py  (intent classification)
     │
     ▼
-adk/root/agent.py  ← root_agent (ADK orchestrator, gemini-2.5-pro)
-    │  delegates to sub-agents based on descriptions
-    ├──► MedicationAgent   → reads medications collection
-    ├──► ExerciseAgent     → reads/writes exercise collection
-    ├──► CheckupAgent      → reads checkups collection
-    ├──► PeopleAgent       → reads contacts collection
-    └──► VisionAgent       → gemini-1.5-pro, image/video analysis
+adk/root/agent.py  ← root_agent (ADK orchestrator, gemini-1.5-pro)
+    │  5 own tools + delegates to sub-agents
+    ├── tools: get_user_profile, get_todays_reminders, get_current_datetime,
+    │          get_health_summary, call_for_help (→ Telegram)
+    │
+    ├──► MedicationAgent   → get_my_medications()
+    ├──► ExerciseAgent     → get_my_exercise_profile(), record_exercise_session()
+    ├──► CheckupAgent      → get_my_checkups()
+    ├──► PeopleAgent       → get_my_contacts()
+    ├──► VisionAgent       → gemini-1.5-pro, image/video analysis
+    └──► NewsAgent         → get_weather(), get_news_headlines(),
+                             get_news_preferences(), update_news_preference()
 
 POST /reminders/generate
     │
@@ -123,68 +128,94 @@ adk web (dev UI)
 
 ## Agent Definitions
 
-### RouterAgent (stateless)
-- Model: `gemini-1.5-flash`
-- Classifies user message into: `medication`, `exercise`, `stretching`, `checkup`, `people`, `general`
-- Dispatches to matching sub-agent and returns its response with `agent` field set
-- `general` intent → handled by a built-in fallback response: a warm, friendly reply that invites the user to ask about medications, exercise, checkups, or people. No sub-agent invoked.
+### RootAgent (orchestrator)
+- Model: `gemini-1.5-pro`
+- Delegates to all sub-agents; handles general questions directly with own tools
+- **Tools:**
+  - `get_user_profile()` — user name, age, language from `users` collection
+  - `get_todays_reminders()` — all reminders from `reminders` collection
+  - `get_current_datetime()` — current date, time, day of week
+  - `get_health_summary()` — combined medications + checkups + reminder count
+  - `call_for_help(trigger_message)` — sends emergency Telegram alert immediately
+- **Emergency detection:** voice-aware; triggers on any distress signal — "help", "fell", "can't breathe", "chest pain", "scared", etc. False positives are preferred over misses.
 
-### MedicationAgent (long-term memory)
+### MedicationAgent
 - Model: `gemini-1.5-flash`
-- System prompt: helpful medication assistant for elderly users; answers questions about schedules, dosage, and reminders
-- Tone: warm, simple language, short sentences
-- **Memory:** reads/writes `agent_memory/{user_id}/medication` in Firestore
-  - Stores: medication list, schedule, last confirmation timestamps
-  - Injects relevant memory into context on each call
-- Returns `media: null`
+- Answers questions about medication schedules, dosage, reminders
+- **Tool:** `get_my_medications()` — reads `medications` collection for `nikola`
 
-### ExerciseAgent (long-term memory)
+### ExerciseAgent
 - Model: `gemini-1.5-flash`
-- System prompt: friendly exercise and stretching coach; encourages gentle movement appropriate for elderly users
-- Handles both `exercise` and `stretching` intents
-- **Memory:** reads/writes `agent_memory/{user_id}/exercise` in Firestore
-  - Stores: exercise history, last session date, streak count
-  - Injects history summary into context on each call
-- Returns `media: null`
+- Friendly exercise and stretching coach; tracks streak
+- **Tools:**
+  - `get_my_exercise_profile()` — reads `exercise` collection
+  - `record_exercise_session()` — increments streak, writes `last_session`
 
-### CheckupAgent (stateless)
+### CheckupAgent
 - Model: `gemini-1.5-flash`
-- System prompt: reminds user about upcoming medical checkups and appointments
-- Returns `media: null`
+- Manages medical appointment reminders
+- **Tool:** `get_my_checkups()` — reads `checkups` collection
 
-### PeopleAgent (long-term memory)
+### PeopleAgent
 - Model: `gemini-1.5-flash`
-- System prompt: helps elderly user stay connected with family and friends; gentle, warm social nudges
-- **Memory:** reads/writes `agent_memory/{user_id}/people` in Firestore
-  - Stores: contact list, last_contact dates, relationship notes
-  - Injects contact history into context on each call
-- Returns `media: null`
+- Helps user stay connected with family and friends
+- **Tool:** `get_my_contacts()` — reads `contacts` collection
 
-### VisionAgent (stateless)
+### VisionAgent
 - Model: `gemini-1.5-pro`
 - Accepts base64-encoded image or video
-- Describes what it sees in simple language for an elderly user
 - Uploads media to GCS bucket (`oonook-media`), returns public HTTPS URL
-- Bucket is configured for public read — no signed URLs needed
 - Returns `media: { type: "image"|"video", url: "https://storage.googleapis.com/oonook-media/..." }`
+
+### NewsAgent
+- Model: `gemini-1.5-flash`
+- Provides weather and personalised news headlines
+- **Tools:**
+  - `get_weather()` — Open-Meteo API, Belgrade, no API key required
+  - `get_news_headlines()` — BBC News RSS, top 8 stories
+  - `get_news_preferences()` — reads `news_preferences` collection
+  - `update_news_preference(topic, liked)` — writes liked/disliked topics to Firestore
+- **Long-term memory:** reads preferences before showing news, prioritises liked topics, skips disliked ones, updates preferences based on user reactions
+
+## Emergency Tool — Telegram
+
+When `call_for_help` is triggered:
+1. Fetches user profile (name) from `users/nikola`
+2. Fetches all contacts with `emergency_contact: true`
+3. Calls Gemini to generate one-sentence assessment of the distress
+4. Sends to each contact's `telegram_chat_id` via Telegram Bot API:
+```
+🚨 Nikola Nikolic might need help, reach out immediately.
+
+💬 They said: "help I fell"
+
+🤖 Nikola may have fallen and be unable to get up; call them immediately.
+
+🕐 28 March 2026, 14:32
+```
+- Bot: @Oonookbot — token stored in Firestore `app_config/telegram`
+- Contacts without a `telegram_chat_id` are skipped
 
 ## Firestore Schema
 
 Flat root-level collections. All user-scoped documents include a `userId` field and are filtered with `.where("userId", "==", user_id)`.
 
 ```
-users/           {user_id}                    — profile (name, age, language)
-medications/     {med_id}    userId, name, dose, schedule, notes
-contacts/        {con_id}    userId, name, relationship, phone, last_contact
-exercise/        {user_id}                    — state doc (streak_days, limitations)
-checkups/        {chk_id}    userId, doctor, specialty, date, location
-reminders/       {rem_id}    userId, title, description, time, auto_generated (bool)
+users/              {user_id}          — profile (name, age, language)
+medications/        {med_id}           userId, name, dose, schedule, notes
+contacts/           {con_id}           userId, name, relationship, phone, last_contact,
+                                       emergency_contact (bool), telegram_chat_id
+exercise/           {user_id}          — state doc (streak_days, last_session, limitations)
+checkups/           {chk_id}           userId, doctor, specialty, date, location
+reminders/          {rem_id}           userId, title, description, time, auto_generated (bool)
+news_preferences/   {user_id}          — liked_topics[], disliked_topics[]
+app_config/         telegram           — bot_token (Telegram Bot API token)
 ```
 
 ### reminders collection
 ```json
 {
-  "userId": "demo_user",
+  "userId": "nikola",
   "title": "Take Aspirin",
   "description": "100mg — take with water",
   "time": "08:00",
@@ -194,34 +225,12 @@ reminders/       {rem_id}    userId, title, description, time, auto_generated (b
 - `auto_generated: true` — created by `/reminders/generate`; deleted and regenerated each run
 - `auto_generated: false` — created by `/reminders/voice`; permanent, never overwritten
 
-### checkup document
-```json
-{
-  "patient_name": "John",
-  "appointments": [
-    { "doctor": "Dr. Smith", "date": "April 5" }
-  ]
-}
-```
-
-### medication document (updated — includes patient name)
-```json
-{
-  "patient_name": "John",
-  "medications": [
-    { "name": "Aspirin", "dose": "100mg", "time": "morning and evening" }
-  ],
-  "last_confirmed": { "Aspirin": "2026-03-28T08:05:00Z" },
-  "notes": "Take with food"
-}
-```
-
 ## Memory Read/Write Pattern
 On each agent call:
-1. **Read** relevant collection(s) from Firestore for `user_id`
-2. **Inject** relevant facts as additional context into the Gemini prompt
+1. **Read** relevant collection(s) from Firestore via tool call
+2. **Inject** facts as context into the Gemini prompt
 3. Call Gemini, get response
-4. **Write** any updates back (e.g. exercise streak increment)
+4. **Write** any updates back (e.g. exercise streak, news preferences)
 
 ## File Structure
 ```
@@ -229,16 +238,18 @@ agents/
 ├── main.py                  # FastAPI app + endpoint definitions
 ├── router.py                # Intent classification + dispatch to domain agents
 ├── memory.py                # Firestore helpers (get/write per collection)
+├── telegram.py              # Telegram Bot API helper (loads token from Firestore)
 ├── models.py                # Pydantic request/response schemas
 ├── config.py                # env var loading + vertexai.init()
-├── seed.py                  # One-time Firestore seeding script (demo data)
+├── seed.py                  # One-time Firestore seeding script (demo data for nikola)
 ├── adk/
-│   ├── root/agent.py        # ADK root orchestrator (adk web entry point)
-│   ├── medication/agent.py  # MedicationAgent — reads medications collection
-│   ├── exercise/agent.py    # ExerciseAgent — reads/writes exercise collection
-│   ├── checkup/agent.py     # CheckupAgent — reads checkups collection
-│   ├── people/agent.py      # PeopleAgent — reads contacts collection
+│   ├── root/agent.py        # ADK root orchestrator + 5 tools incl. call_for_help
+│   ├── medication/agent.py  # MedicationAgent — get_my_medications tool
+│   ├── exercise/agent.py    # ExerciseAgent — exercise profile + streak tools
+│   ├── checkup/agent.py     # CheckupAgent — get_my_checkups tool
+│   ├── people/agent.py      # PeopleAgent — get_my_contacts tool
 │   ├── vision/agent.py      # VisionAgent — image + video via Gemini Pro
+│   ├── news/agent.py        # NewsAgent — weather + news + preferences tools
 │   └── reminders/agent.py   # run() for AI generation, run_voice() for custom
 ├── gcs.py                   # GCS upload helper
 └── requirements.txt
@@ -271,6 +282,9 @@ Frontend always speaks `fallback_response` on error shape.
 ```bash
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
+
+# ADK web UI (test agents directly)
+adk web adk/
 ```
 Requires `GOOGLE_APPLICATION_CREDENTIALS` pointing to a service account with:
 - `roles/aiplatform.user` (Vertex AI)

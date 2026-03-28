@@ -1,22 +1,21 @@
 # Infra Spec — Dev 4
 
 ## Overview
-Local development environment using Docker Compose + Firestore emulator. All services run locally. Cloud deployment is out of scope for now.
+Local development environment using Docker Compose. All services run locally. Firestore uses real GCP — no emulator. Cloud deployment is out of scope for now.
 
-## GCP Project (for Vertex AI + GCS — used even locally)
+## GCP Project
 ```
-Project ID: oonook-demo
-Region:     us-central1
+Project ID: woven-bonbon-485514-h5
+Region:     europe-west1
 ```
-Even in local dev, Vertex AI (Gemini) and GCS calls go to real GCP. Only Firestore is emulated locally.
+Vertex AI (Gemini), GCS, and Firestore all connect to real GCP — even in local dev.
 
 ## Local Stack
 
 ```
 docker-compose.yml
 ├── backend      (Spring Boot :8080)
-├── agents       (Python FastAPI :8000)
-└── firestore    (Firestore emulator :9090 + UI :4000)
+└── agents       (Python FastAPI :8000)
 
 frontend          (Expo — runs on host machine, not in Docker)
 ```
@@ -32,35 +31,21 @@ services:
       - "8080:8080"
     environment:
       AGENTS_URL: http://agents:8000
-      FIRESTORE_EMULATOR_HOST: firestore:9090
-      GOOGLE_CLOUD_PROJECT: oonook-demo
+      GOOGLE_CLOUD_PROJECT: woven-bonbon-485514-h5
     depends_on:
       - agents
-      - firestore
 
   agents:
     build: ./agents
     ports:
       - "8000:8000"
     environment:
-      GOOGLE_CLOUD_PROJECT: oonook-demo
-      GOOGLE_CLOUD_LOCATION: us-central1
+      GOOGLE_CLOUD_PROJECT: woven-bonbon-485514-h5
+      GOOGLE_CLOUD_LOCATION: europe-west1
       GCS_BUCKET: oonook-media
-      FIRESTORE_EMULATOR_HOST: firestore:9090
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa.json
     volumes:
       - ./config/sa.json:/secrets/sa.json:ro
-    depends_on:
-      - firestore
-
-  firestore:
-    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
-    command: >
-      gcloud emulators firestore start
-      --host-port=0.0.0.0:9090
-      --project=oonook-demo
-    ports:
-      - "9090:9090"
 ```
 
 ## Dockerfiles
@@ -84,35 +69,43 @@ COPY . .
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ```
 
-## GCP Resources Needed (even for local dev)
+## GCP Resources
 
 ### Service Account
-- Name: `oonook-sa@oonook-demo.iam.gserviceaccount.com`
 - Roles:
-  - `roles/aiplatform.user` — Vertex AI / Gemini calls (agents)
+  - `roles/aiplatform.user` — Vertex AI / Gemini (agents)
   - `roles/storage.objectAdmin` — GCS media bucket (agents)
-  - `roles/datastore.user` — Firestore read/write (agents: agent_memory; backend: reminders)
-- Key file: download as JSON → place at `./secrets/sa.json` (gitignored)
+  - `roles/datastore.user` — Firestore read/write (agents + backend)
+- Key file: download as JSON → place at `./config/sa.json` (gitignored)
 
 ### Cloud Storage Bucket
 - Name: `oonook-media`
-- Location: `us-central1`
-- Access: uniform, public read (for media URLs served to frontend)
+- Location: `europe-west1`
+- Access: uniform, public read
 
-Create once:
 ```bash
-gsutil mb -l us-central1 gs://oonook-media
+gsutil mb -l europe-west1 gs://oonook-media
 gsutil iam ch allUsers:objectViewer gs://oonook-media
 ```
 
-### Firestore
-- Emulated locally via Docker (no real Firestore needed for dev)
-- Collections used:
-  - `reminders` — managed by backend (CRUD, seeded on startup)
-  - `agent_memory` — managed by agents service (long-term memory per user/domain)
-    - Path pattern: `agent_memory/{user_id}/{domain}/data`
-    - Domains: `medication`, `exercise`, `people`
-    - Created automatically by agents on first write; no manual seeding needed
+### Firestore (real GCP)
+Collections managed by the agents service:
+```
+users/              — user profile (nikola / Nikola Nikolic)
+medications/        — medication list with schedules
+contacts/           — family/friends; emergency_contact (bool) + telegram_chat_id
+exercise/           — exercise streak and session history
+checkups/           — upcoming medical appointments
+reminders/          — AI-generated and manual reminders
+news_preferences/   — liked/disliked news topics per user
+app_config/         — telegram bot token (app_config/telegram → bot_token)
+```
+
+### Telegram Bot
+- Bot: @Oonookbot
+- Token stored in Firestore: `app_config/telegram` → `bot_token`
+- Emergency contacts must message @Oonookbot first to activate their chat
+- `telegram_chat_id` stored on the contact's Firestore document
 
 ## Config & Secrets
 ```
@@ -123,30 +116,39 @@ config/
 └── sa.json.example ← committed shape reference
 ```
 
-Each dev: download the `oonook-sa` service account key from GCP Console → save as `config/sa.json`.
-
 ## Local Dev Quickstart
 ```bash
-# 1. Place GCP service account key at ./secrets/sa.json
+# 1. Place GCP service account key at ./config/sa.json
 
 # 2. Build Spring Boot jar
 cd backend && mvn package -DskipTests && cd ..
 
-# 3. Start backend + agents + firestore emulator
+# 3. Start backend + agents
 docker compose up
 
 # 4. Start frontend (separate terminal, on host)
 cd frontend && npx expo start
+
+# 5. (Optional) ADK web UI for testing agents
+cd agents && adk web adk/
 ```
 
-Services will be available at:
-- Frontend (Expo): `exp://localhost:8081` (or scan QR)
+Services:
+- Frontend (Expo): `exp://localhost:8081`
 - Backend: `http://localhost:8080`
 - Agents: `http://localhost:8000`
-- Firestore emulator: `localhost:9090` (gRPC — no web UI with this image)
 
-## Firestore Seed Data
-The backend seeds demo reminders on first startup (see backend SPEC). No manual seeding needed.
+## Demo Data
+Seed Firestore with data for user `nikola` (Nikola Nikolic):
+```bash
+cd agents && python3.11 seed.py
+```
+Generate AI reminders after seeding:
+```bash
+curl -X POST http://localhost:8000/reminders/generate \
+  -H "Content-Type: application/json" \
+  -d '{"user_id":"nikola"}'
+```
 
 ## Out of Scope (for now)
-Cloud Run deployment, Artifact Registry, CI/CD, custom domain, staging environment — these come after the demo is working locally.
+Cloud Run deployment, Artifact Registry, CI/CD, custom domain, staging environment.

@@ -62,10 +62,17 @@ Flow: hold → record audio via **expo-audio** → release → POST /chat → sp
 ## Reminders Strip
 
 - Horizontal scroll, always visible when idle
-- Fetch on mount from `GET /reminders?user_id=demo_user`
+- Fetch on mount from `GET /reminders?user_id=nikola`
 - Five types: 💊 medication | 🧘 stretching | 💪 exercise | 🏥 checkup | 👥 people
 - Each card: icon + label + time
 - Tap any card → trigger voice interaction: sends a predefined message to `POST /chat` based on reminder type (e.g. tapping 💊 Aspirin sends `"Tell me about my Aspirin reminder"`, tapping 👥 Call Ana sends `"Should I call Ana?"`). No mic recording needed — message is synthetic.
+
+## Setup Modal
+
+- Accessed via long-press on share button (5+ seconds)
+- Dark theme, green accent
+- Fields: Patient Name, Medications (name/dose/time), Contacts (name/relationship/telegram_chat_id), Appointments (doctor/date)
+- TODO: wire up Save to write to Firestore via backend
 
 ## Media Zone
 
@@ -76,7 +83,7 @@ Flow: hold → record audio via **expo-audio** → release → POST /chat → sp
 
 ## API Contract
 
-All calls to `${EXPO_PUBLIC_BACKEND_URL}` — hardcode `user_id = "demo_user"`.
+All calls to `${EXPO_PUBLIC_BACKEND_URL}` — hardcode `user_id = "nikola"`.
 
 ```
 POST /chat
@@ -91,7 +98,7 @@ POST /video
   body: { user_id, video_base64 }
   response: same shape
 
-GET /reminders?user_id=demo_user
+GET /reminders?user_id=nikola
   response: { reminders[] }
 
 POST /reminders/confirm
