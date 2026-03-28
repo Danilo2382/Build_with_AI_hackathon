@@ -1,15 +1,28 @@
+import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
+import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
+  Dimensions,
   Easing,
+  Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+
+const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const PHOTO_W = SCREEN_W * 0.55;
+const PHOTO_H = SCREEN_H * 0.35;
 import Svg, { Path } from 'react-native-svg';
+
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8080';
+const USER_ID = 'demo_user';
 
 type Reminder = { id: string; icon: string; label: string; time: string };
 
@@ -158,7 +171,71 @@ function RotatingRing({ listening }: { listening: boolean }) {
 
 export default function App() {
   const [listening, setListening] = useState(false);
+  const [thinking, setThinking] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [permission, requestPermission] = useCameraPermissions();
+  const cameraRef = useRef<CameraView>(null);
+  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const photoScale = useRef(new Animated.Value(1)).current;
+  const photoOpacity = useRef(new Animated.Value(1)).current;
+  const micTranslateY = useRef(new Animated.Value(0)).current;
+
+  const openCamera = async () => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) {
+        Speech.speak('Camera permission is required.');
+        return;
+      }
+    }
+    setCameraOpen(true);
+  };
+
+  const takePicture = async () => {
+    if (!cameraRef.current || processing) return;
+    setProcessing(true);
+    try {
+      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.7 });
+      setCameraOpen(false);
+
+      // Appear at natural size, linger, then shrink away
+      photoScale.setValue(1);
+      photoOpacity.setValue(0);
+      micTranslateY.setValue(0);
+      setCapturedUri(photo?.uri ?? null);
+
+      Animated.timing(photoOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => {
+        setTimeout(() => {
+          Animated.parallel([
+            Animated.timing(photoOpacity, { toValue: 0, duration: 500, useNativeDriver: true }),
+            Animated.spring(photoScale, { toValue: 1 / 10, useNativeDriver: true, speed: 3, bounciness: 0 }),
+          ]).start(() => setCapturedUri(null));
+        }, 2500);
+      });
+
+      Speech.speak('Let me take a look at that…');
+      console.log('[CAM] base64 length:', photo?.base64?.length);
+      console.log('[CAM] posting to backend...');
+      const res = await fetch(`${BACKEND_URL}/vision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: USER_ID, image_base64: photo?.base64 }),
+      });
+      console.log('[CAM] backend status:', res.status);
+      const data = await res.json();
+      console.log('[CAM] backend response:', data);
+      const text = data.fallback_response ?? data.response ?? 'Sorry, I could not analyse that.';
+      Speech.speak(text);
+    } catch (e) {
+      console.error('[CAM] error:', e);
+      Speech.speak('Sorry, I cannot connect. Please try again.');
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   const buttonScale = useRef(new Animated.Value(1)).current;
   const breathe = useRef(new Animated.Value(1)).current;
@@ -177,29 +254,97 @@ export default function App() {
     return () => loop.stop();
   }, []);
 
-  const onPressIn = () => {
+  const onPressIn = async () => {
     setListening(true);
-    // Fade hint out → back in with new text handled by state
     Animated.sequence([
       Animated.timing(hintOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
       Animated.timing(hintOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
-    // Button squish
     Animated.spring(buttonScale, { toValue: 0.91, useNativeDriver: true, speed: 40, bounciness: 3 }).start();
-    // Glow in
     Animated.timing(glowOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start();
+
+    try {
+      const { granted } = await requestRecordingPermissionsAsync();
+      console.log('[MIC] permission granted:', granted);
+      if (!granted) { Speech.speak('Microphone permission is required.'); return; }
+      await recorder.prepareToRecordAsync();
+      console.log('[MIC] prepared, starting record');
+      recorder.record();
+      console.log('[MIC] recording started');
+    } catch (e) {
+      console.error('[MIC] onPressIn error:', e);
+      Speech.speak('Could not start recording.');
+    }
   };
 
-  const onPressOut = () => {
+  const onPressOut = async () => {
     setListening(false);
     Animated.sequence([
       Animated.timing(hintOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
       Animated.timing(hintOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
     ]).start();
-    // Button bounce back
     Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 10 }).start();
-    // Glow out
     Animated.timing(glowOpacity, { toValue: 0, duration: 400, useNativeDriver: true }).start();
+    Animated.sequence([
+      Animated.timing(hintOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+      Animated.timing(hintOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+    ]).start();
+
+    try {
+      await recorder.stop();
+      const uri = recorder.uri;
+      console.log('[MIC] stopped, uri:', uri);
+      if (!uri) { console.warn('[MIC] no URI after stop'); return; }
+
+      setThinking(true);
+      Animated.sequence([
+        Animated.timing(hintOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+        Animated.timing(hintOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      ]).start();
+      Speech.speak('Let me think about that…');
+
+      console.log('[MIC] fetching audio file...');
+      const response = await fetch(uri);
+      console.log('[MIC] fetch status:', response.status);
+      const blob = await response.blob();
+      console.log('[MIC] blob size:', blob.size);
+      const base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const result = (reader.result as string).split(',')[1];
+          console.log('[MIC] base64 length:', result?.length);
+          resolve(result);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      try {
+        console.log('[MIC] posting to backend...');
+        const res = await fetch(`${BACKEND_URL}/chat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: USER_ID, audio_base64: base64 }),
+        });
+        console.log('[MIC] backend status:', res.status);
+        const data = await res.json();
+        console.log('[MIC] backend response:', data);
+        const text = data.fallback_response ?? data.response;
+        if (text) Speech.speak(text);
+      } catch (e) {
+        console.error('[MIC] backend error:', e);
+        Speech.speak('Sorry, I cannot connect. Please try again.');
+      } finally {
+        setThinking(false);
+        Animated.sequence([
+          Animated.timing(hintOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
+          Animated.timing(hintOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+        ]).start();
+      }
+    } catch {
+      setThinking(false);
+      Speech.speak('Sorry, something went wrong.');
+    }
   };
 
   const next = REMINDERS_PLACEHOLDER[0];
@@ -212,9 +357,9 @@ export default function App() {
         {/* micWrapper is 320x320 — rings expand inside here, text is outside */}
         <View style={styles.micWrapper}>
           <Animated.View style={[styles.glow, { opacity: glowOpacity }]} />
-          <PulseRing animate={listening} delay={0} />
-          <PulseRing animate={listening} delay={450} />
-          <PulseRing animate={listening} delay={900} />
+          <PulseRing animate={listening || thinking} delay={0} />
+          <PulseRing animate={listening || thinking} delay={450} />
+          <PulseRing animate={listening || thinking} delay={900} />
 
           <Animated.View style={{ transform: [{ scale: listening ? buttonScale : breathe }] }}>
             <TouchableOpacity
@@ -222,6 +367,7 @@ export default function App() {
               onPressIn={onPressIn}
               onPressOut={onPressOut}
               activeOpacity={1}
+              disabled={thinking}
             >
               <Text style={styles.micIcon}>🎙️</Text>
             </TouchableOpacity>
@@ -230,16 +376,32 @@ export default function App() {
           <RotatingRing listening={listening} />
         </View>
 
-        <Animated.Text style={[styles.micHint, listening && styles.micHintActive, { opacity: hintOpacity }]}>
-          {listening ? 'Listening…' : 'Hold to speak'}
+        <Animated.Text style={[styles.micHint, (listening || thinking) && styles.micHintActive, { opacity: hintOpacity }]}>
+          {listening ? 'Listening…' : thinking ? 'Thinking…' : 'Hold to speak'}
         </Animated.Text>
       </View>
 
       {/* Camera */}
-      <TouchableOpacity style={styles.cameraButton} activeOpacity={0.7}>
+      <TouchableOpacity style={styles.cameraButton} activeOpacity={0.7} onPress={openCamera}>
         <Text style={styles.cameraIcon}>📷</Text>
         <Text style={styles.cameraLabel}>Camera</Text>
       </TouchableOpacity>
+
+      {/* Camera modal */}
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={styles.cameraScreen}>
+          <CameraView ref={cameraRef} style={styles.cameraPreview} facing="back" />
+          <View style={styles.cameraControls}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setCameraOpen(false)}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.captureButton} onPress={takePicture} disabled={processing}>
+              <View style={styles.captureInner} />
+            </TouchableOpacity>
+            <View style={{ width: 56 }} />
+          </View>
+        </View>
+      </Modal>
 
       {/* Reminders */}
       <View style={styles.remindersArea}>
@@ -268,6 +430,18 @@ export default function App() {
           </ScrollView>
         )}
       </View>
+
+      {/* Photo shrink animation overlay */}
+      {capturedUri && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.photoOverlay, { transform: [{ scale: photoScale }], opacity: photoOpacity }]}
+        >
+          <View style={styles.photoFrame}>
+            <Image source={{ uri: capturedUri }} style={styles.photoOverlayImage} />
+          </View>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -432,5 +606,80 @@ const styles = StyleSheet.create({
   reminderRowTime: {
     fontSize: 14,
     color: '#2A3A2A',
+  },
+
+  // Camera modal
+  cameraScreen: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  cameraPreview: {
+    flex: 1,
+  },
+  cameraControls: {
+    position: 'absolute',
+    bottom: 48,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 40,
+  },
+  closeButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeButtonText: {
+    fontSize: 22,
+    color: '#FFFFFF',
+  },
+  captureButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  captureInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#FFFFFF',
+  },
+
+  photoOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoFrame: {
+    width: PHOTO_W,
+    height: PHOTO_H,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: GREEN,
+    padding: 4,
+    backgroundColor: CARD,
+    shadowColor: GREEN,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  photoOverlayImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 16,
   },
 });
