@@ -4,7 +4,7 @@ import config  # noqa: F401 — ensures vertexai.init() is called
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from agents.vision import run_image, run_video
+from adk.vision.agent import run_image, run_video
 from models import AgentResponse, ChatRequest, VideoRequest, VisionRequest
 from router import route
 

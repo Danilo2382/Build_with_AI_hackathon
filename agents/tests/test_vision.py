@@ -17,7 +17,7 @@ async def test_run_image_returns_agent_response():
         new_callable=AsyncMock,
         return_value=_gemini_mock("This is Aspirin 100mg."),
     ):
-        from agents.vision import run_image
+        from adk.vision.agent import run_image
         result = await run_image("demo_user", "data:image/jpeg;base64,/9j/4AAQ==")
 
     assert isinstance(result, AgentResponse)
@@ -32,7 +32,7 @@ async def test_run_video_returns_agent_response():
         new_callable=AsyncMock,
         return_value=_gemini_mock("You are exercising correctly."),
     ):
-        from agents.vision import run_video
+        from adk.vision.agent import run_video
         result = await run_video("demo_user", "data:video/mp4;base64,AAAAAAAA")
 
     assert isinstance(result, AgentResponse)
