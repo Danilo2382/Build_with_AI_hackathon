@@ -32,8 +32,8 @@ async def test_run_injects_history_into_prompt():
         m.text = "Great job!"
         return m
 
-    with patch("adk.exercise.agent.get_exercise", new_callable=AsyncMock, return_value=state):
-        with patch("adk.exercise.agent.update_exercise", new_callable=AsyncMock):
+    with patch("memory.get_exercise", new_callable=AsyncMock, return_value=state):
+        with patch("memory.update_exercise", new_callable=AsyncMock):
             with patch(
                 "vertexai.generative_models.GenerativeModel.generate_content_async",
                 side_effect=fake_generate,
