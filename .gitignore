@@ -1,6 +1,7 @@
 # ── Secrets & Config ──────────────────────────────────────
 config/.env
 config/sa.json
+config/se.json
 secrets/
 
 # ── Python ────────────────────────────────────────────────

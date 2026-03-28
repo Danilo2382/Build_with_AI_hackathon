@@ -1,0 +1,42 @@
+import logging
+
+import config  # noqa: F401 — ensures vertexai.init() is called
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from adk.vision.agent import run_image, run_video
+from models import AgentResponse, ChatRequest, VideoRequest, VisionRequest
+from router import route
+
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Oonook Agents", version="1.0.0")
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error: %s", exc)
+    return JSONResponse(
+        status_code=200,
+        content={"fallback_response": "Sorry, I had trouble understanding that. Please try again."},
+    )
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {"status": "ok"}
+
+
+@app.post("/chat", response_model=AgentResponse)
+async def chat(body: ChatRequest) -> AgentResponse:
+    return await route(body.user_id, body.message)
+
+
+@app.post("/vision/image", response_model=AgentResponse)
+async def vision_image(body: VisionRequest) -> AgentResponse:
+    return await run_image(body.user_id, body.image_base64)
+
+
+@app.post("/vision/video", response_model=AgentResponse)
+async def vision_video(body: VideoRequest) -> AgentResponse:
+    return await run_video(body.user_id, body.video_base64)
