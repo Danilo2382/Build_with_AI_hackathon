@@ -1,16 +1,21 @@
 import json
+import sys
 from datetime import date, datetime, timezone
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config import FAST_MODEL  # noqa: F401 — ensures vertexai.init() is called
 from google.adk.agents import LlmAgent
 from vertexai.generative_models import GenerativeModel
 
-from memory import get_memory, update_memory
+from memory import get_exercise, update_exercise
 from models import AgentResponse
 
 _SYSTEM_PROMPT = """You are a friendly exercise and stretching coach for elderly users.
 Encourage gentle movement. Celebrate small wins warmly.
 Keep sentences short. Safety first — never push too hard.
+Respect any physical limitations the user has.
 Handle both exercise and stretching topics."""
 
 root_agent = LlmAgent(
@@ -31,18 +36,18 @@ def _get_model() -> GenerativeModel:
 
 
 async def run(user_id: str, message: str) -> AgentResponse:
-    mem = await get_memory(user_id, "exercise")
+    state = await get_exercise(user_id)
 
-    context = f"User exercise history:\n{json.dumps(mem, indent=2)}\n\n" if mem else ""
+    context = f"User exercise profile:\n{json.dumps(state, indent=2)}\n\n" if state else ""
     response = await _get_model().generate_content_async(f"{context}User: {message}")
 
     today = date.today().isoformat()
-    streak = mem.get("streak_days", 0)
-    if mem.get("last_session") != today:
+    streak = state.get("streak_days", 0)
+    if state.get("last_session") != today:
         streak += 1
 
-    await update_memory(user_id, "exercise", {
-        **mem,
+    await update_exercise(user_id, {
+        **state,
         "last_session": today,
         "streak_days": streak,
         "last_interaction": datetime.now(timezone.utc).isoformat(),

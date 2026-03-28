@@ -39,7 +39,7 @@ public class AgentsService {
 
     public ResponseEntity<ChatResponse> forwardVision(VisionRequest request) {
         return restClient.post()
-                .uri("/vision")
+                .uri("/vision/image")
                 .body(request)
                 .retrieve()
                 .toEntity(ChatResponse.class);
@@ -47,7 +47,7 @@ public class AgentsService {
 
     public ResponseEntity<ChatResponse> forwardVideo(VideoRequest request) {
         return restClient.post()
-                .uri("/video")
+                .uri("/vision/video")
                 .body(request)
                 .retrieve()
                 .toEntity(ChatResponse.class);

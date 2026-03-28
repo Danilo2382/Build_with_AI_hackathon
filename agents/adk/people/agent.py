@@ -1,17 +1,20 @@
 import json
-from datetime import datetime, timezone
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from config import FAST_MODEL  # noqa: F401 — ensures vertexai.init() is called
 from google.adk.agents import LlmAgent
 from vertexai.generative_models import GenerativeModel
 
-from memory import get_memory, update_memory
+from memory import get_contacts
 from models import AgentResponse
 
 _SYSTEM_PROMPT = """You are a warm companion helping elderly users stay connected with family and friends.
 Gently remind them who they haven't spoken to recently.
 Be encouraging and warm, never guilt-tripping.
-Use the contact history to give personalised nudges."""
+Use the contact list to give personalised nudges."""
 
 root_agent = LlmAgent(
     name="people",
@@ -31,14 +34,9 @@ def _get_model() -> GenerativeModel:
 
 
 async def run(user_id: str, message: str) -> AgentResponse:
-    mem = await get_memory(user_id, "people")
+    contacts = await get_contacts(user_id)
 
-    context = f"User contact history:\n{json.dumps(mem, indent=2)}\n\n" if mem else ""
+    context = f"User contacts:\n{json.dumps(contacts, indent=2)}\n\n" if contacts else ""
     response = await _get_model().generate_content_async(f"{context}User: {message}")
-
-    await update_memory(user_id, "people", {
-        **mem,
-        "last_interaction": datetime.now(timezone.utc).isoformat(),
-    })
 
     return AgentResponse(response=response.text, agent="people", media=None)

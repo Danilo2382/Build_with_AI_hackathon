@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
 class VisionRequest(BaseModel):
     user_id: str
     image_base64: str
+    prompt: Optional[str] = None
 
 
 class VideoRequest(BaseModel):
@@ -27,6 +28,15 @@ class AgentResponse(BaseModel):
     response: str
     agent: str
     media: Optional[MediaItem] = None
+
+
+class GenerateRemindersRequest(BaseModel):
+    user_id: str
+
+
+class VoiceReminderRequest(BaseModel):
+    user_id: str
+    message: str
 
 
 class ErrorResponse(BaseModel):
