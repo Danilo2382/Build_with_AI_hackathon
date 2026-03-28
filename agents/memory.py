@@ -87,3 +87,16 @@ async def get_reminders(user_id: str) -> list[dict]:
     """Return all reminders for the user."""
     docs = await _get_db().collection("reminders").where("userId", "==", user_id).get()
     return [{"id": d.id, **d.to_dict()} for d in docs]
+
+
+# ── News Preferences ────────────────────────────────────────────────────────
+
+async def get_news_preferences(user_id: str) -> dict:
+    """Return the user's news topic preferences."""
+    snap = await _get_db().collection("news_preferences").document(user_id).get()
+    return snap.to_dict() or {"liked_topics": [], "disliked_topics": []}
+
+
+async def update_news_preferences(user_id: str, updates: dict) -> None:
+    """Update the user's news topic preferences."""
+    await _get_db().collection("news_preferences").document(user_id).set(updates, merge=True)

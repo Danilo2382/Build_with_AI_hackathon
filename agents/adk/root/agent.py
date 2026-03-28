@@ -13,7 +13,6 @@ from adk.medication.agent import root_agent as medication_agent
 from adk.news.agent import root_agent as news_agent
 from adk.people.agent import root_agent as people_agent
 from adk.vision.agent import root_agent as vision_agent
-from adk.weather.agent import root_agent as weather_agent
 from memory import get_checkups, get_medications, get_profile, get_reminders
 
 
@@ -63,8 +62,7 @@ Delegate specialist requests immediately to the appropriate sub-agent:
 - checkup: doctor appointments, medical exams, health checks
 - people: staying in touch with family and friends
 - vision: describing images or videos
-- weather: current weather and forecast
-- news: latest news headlines""",
+- news: current weather forecast and latest news headlines""",
     tools=[get_user_profile, get_todays_reminders, get_current_datetime, get_health_summary],
-    sub_agents=[medication_agent, exercise_agent, checkup_agent, people_agent, vision_agent, weather_agent, news_agent],
+    sub_agents=[medication_agent, exercise_agent, checkup_agent, people_agent, vision_agent, news_agent],
 )
