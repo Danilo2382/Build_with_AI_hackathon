@@ -5,6 +5,8 @@ import com.pmfns.oonook.models.ChatResponse;
 import com.pmfns.oonook.models.VideoRequest;
 import com.pmfns.oonook.models.VisionRequest;
 
+import java.util.Map;
+
 import lombok.RequiredArgsConstructor;
 
 import org.springframework.http.ResponseEntity;
@@ -51,5 +53,13 @@ public class AgentsService {
                 .body(request)
                 .retrieve()
                 .toEntity(ChatResponse.class);
+    }
+
+    public void generateReminders(String userId) {
+        restClient.post()
+                .uri("/reminders/generate")
+                .body(Map.of("user_id", userId))
+                .retrieve()
+                .toBodilessEntity();
     }
 }
