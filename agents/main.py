@@ -4,7 +4,7 @@ import config  # noqa: F401 — ensures vertexai.init() is called
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from adk.reminders.agent import run as run_reminders, run_voice as run_voice_reminder
+from reminders import run as run_reminders, run_voice as run_voice_reminder
 from adk.vision.agent import run_image, run_video
 from models import AgentResponse, ChatRequest, GenerateRemindersRequest, VideoRequest, VisionRequest, VoiceReminderRequest
 from router import route

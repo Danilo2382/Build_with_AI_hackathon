@@ -9,6 +9,7 @@ import java.util.Map;
 
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -32,9 +33,14 @@ public class AgentsService {
     }
 
     public ResponseEntity<ChatResponse> forwardChat(ChatRequest request) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("user_id", request.userId());
+        if (request.message() != null) body.put("message", request.message());
+        if (request.audioBase64() != null) body.put("audio_base64", request.audioBase64());
         return restClient.post()
                 .uri("/chat")
-                .body(request)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
                 .retrieve()
                 .toEntity(ChatResponse.class);
     }
@@ -42,7 +48,8 @@ public class AgentsService {
     public ResponseEntity<ChatResponse> forwardVision(VisionRequest request) {
         return restClient.post()
                 .uri("/vision/image")
-                .body(request)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("user_id", request.userId(), "image_base64", request.imageBase64()))
                 .retrieve()
                 .toEntity(ChatResponse.class);
     }
@@ -50,7 +57,8 @@ public class AgentsService {
     public ResponseEntity<ChatResponse> forwardVideo(VideoRequest request) {
         return restClient.post()
                 .uri("/vision/video")
-                .body(request)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of("user_id", request.userId(), "video_base64", request.videoBase64()))
                 .retrieve()
                 .toEntity(ChatResponse.class);
     }
@@ -58,6 +66,7 @@ public class AgentsService {
     public void generateReminders(String userId) {
         restClient.post()
                 .uri("/reminders/generate")
+                .contentType(MediaType.APPLICATION_JSON)
                 .body(Map.of("user_id", userId))
                 .retrieve()
                 .toBodilessEntity();
