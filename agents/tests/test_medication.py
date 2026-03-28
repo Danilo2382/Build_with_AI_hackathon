@@ -1,15 +1,14 @@
 import importlib
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from models import AgentResponse
 
 
 @pytest.mark.asyncio
-async def test_run_returns_agent_response(mock_gemini, firestore_empty):
-    db, _ = firestore_empty
-    with patch("memory._get_db", return_value=db):
+async def test_run_returns_agent_response(mock_gemini):
+    with patch("adk.medication.agent.get_medications", new_callable=AsyncMock, return_value=[]):
         from adk.medication.agent import run
         result = await run("demo_user", "When do I take aspirin?")
     assert isinstance(result, AgentResponse)
@@ -19,8 +18,8 @@ async def test_run_returns_agent_response(mock_gemini, firestore_empty):
 
 
 @pytest.mark.asyncio
-async def test_run_injects_memory_into_prompt(firestore_medication):
-    db, _ = firestore_medication
+async def test_run_injects_memory_into_prompt():
+    meds = [{"id": "med_001", "name": "Aspirin", "dose": "100mg", "schedule": ["08:00", "20:00"]}]
     captured = []
 
     async def fake_generate(prompt, **_):
@@ -29,7 +28,7 @@ async def test_run_injects_memory_into_prompt(firestore_medication):
         m.text = "Take Aspirin at 8am."
         return m
 
-    with patch("memory._get_db", return_value=db):
+    with patch("memory.get_medications", new_callable=AsyncMock, return_value=meds):
         with patch(
             "vertexai.generative_models.GenerativeModel.generate_content_async",
             side_effect=fake_generate,
@@ -42,9 +41,8 @@ async def test_run_injects_memory_into_prompt(firestore_medication):
 
 
 @pytest.mark.asyncio
-async def test_run_writes_memory_after_response(mock_gemini, firestore_empty):
-    db, doc_ref = firestore_empty
-    with patch("memory._get_db", return_value=db):
+async def test_run_with_empty_medications(mock_gemini):
+    with patch("adk.medication.agent.get_medications", new_callable=AsyncMock, return_value=[]):
         from adk.medication.agent import run
-        await run("demo_user", "I just took my aspirin")
-    doc_ref.set.assert_called_once()
+        result = await run("demo_user", "Do I have any medications?")
+    assert isinstance(result, AgentResponse)

@@ -29,6 +29,15 @@ class AgentResponse(BaseModel):
     media: Optional[MediaItem] = None
 
 
+class GenerateRemindersRequest(BaseModel):
+    user_id: str
+
+
+class VoiceReminderRequest(BaseModel):
+    user_id: str
+    message: str
+
+
 class ErrorResponse(BaseModel):
     error: str
     message: str

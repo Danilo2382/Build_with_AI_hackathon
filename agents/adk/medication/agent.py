@@ -1,6 +1,5 @@
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -9,7 +8,7 @@ from config import FAST_MODEL  # noqa: F401 — ensures vertexai.init() is calle
 from google.adk.agents import LlmAgent
 from vertexai.generative_models import GenerativeModel
 
-from memory import get_memory, update_memory
+from memory import get_medications
 from models import AgentResponse
 
 _SYSTEM_PROMPT = """You are a warm, helpful medication assistant for elderly users.
@@ -35,14 +34,9 @@ def _get_model() -> GenerativeModel:
 
 
 async def run(user_id: str, message: str) -> AgentResponse:
-    mem = await get_memory(user_id, "medication")
+    meds = await get_medications(user_id)
 
-    context = f"User medication history:\n{json.dumps(mem, indent=2)}\n\n" if mem else ""
+    context = f"User medications:\n{json.dumps(meds, indent=2)}\n\n" if meds else ""
     response = await _get_model().generate_content_async(f"{context}User: {message}")
-
-    await update_memory(user_id, "medication", {
-        **mem,
-        "last_interaction": datetime.now(timezone.utc).isoformat(),
-    })
 
     return AgentResponse(response=response.text, agent="medication", media=None)
