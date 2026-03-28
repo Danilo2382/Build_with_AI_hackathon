@@ -27,11 +27,37 @@ GOOGLE_CLOUD_PROJECT=oonook-demo
 Forwards to agents service, returns response as-is.
 ```json
 // Request
-{ "user_id": "demo_user", "message": "When do I take my aspirin?" }
+{ "user_id": "demo_user", "audio_base64": "<base64 encoded m4a audio>" }
 
 // Response
 { "response": "You take Aspirin at 8am and 8pm.", "agent": "medication", "media": null }
 ```
+
+### POST /setup
+Writes caretaker-provided patient data directly to Firestore `agent_memory` collection. Does NOT forward to agents service.
+```json
+// Request
+{
+  "user_id": "demo_user",
+  "patient_name": "John",
+  "medications": [
+    { "name": "Aspirin", "dose": "100mg", "time": "morning and evening" }
+  ],
+  "contacts": [
+    { "name": "Ana", "relationship": "daughter" }
+  ],
+  "appointments": [
+    { "doctor": "Dr. Smith", "date": "April 5" }
+  ]
+}
+
+// Response
+{ "saved": true }
+```
+Firestore writes:
+- `agent_memory/{user_id}/medication/data` → `{ patient_name, medications[] }`
+- `agent_memory/{user_id}/people/data` → `{ contacts[] }`
+- `agent_memory/{user_id}/checkup/data` → `{ appointments[] }`
 
 ### POST /vision
 ```json
@@ -105,16 +131,19 @@ backend/src/main/java/com/oonook/
 │   ├── ChatController.java
 │   ├── VisionController.java
 │   ├── RemindersController.java
+│   ├── SetupController.java       # NEW
 │   └── HealthController.java
 ├── services/
 │   ├── AgentsService.java         # HTTP forwarding to agents
-│   └── RemindersService.java      # Firestore CRUD
+│   ├── RemindersService.java      # Firestore CRUD
+│   └── SetupService.java          # NEW — writes to agent_memory in Firestore
 ├── models/
-│   ├── ChatRequest.java
+│   ├── ChatRequest.java           # updated: audio_base64 instead of message
 │   ├── ChatResponse.java
 │   ├── VisionRequest.java
 │   ├── VideoRequest.java
 │   ├── Reminder.java
+│   ├── SetupRequest.java          # NEW
 │   └── ErrorResponse.java
 ├── config/
 │   └── RestClientConfig.java      # WebClient or RestClient bean

@@ -10,8 +10,10 @@ import {
   Image,
   Modal,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -23,6 +25,7 @@ import Svg, { Path } from 'react-native-svg';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8080';
 const USER_ID = 'demo_user';
+const BOT_USERNAME = 'Oonook_Hackathon_Bot';
 
 type Reminder = { id: string; icon: string; label: string; time: string };
 
@@ -171,6 +174,16 @@ function RotatingRing({ listening }: { listening: boolean }) {
 
 export default function App() {
   const [listening, setListening] = useState(false);
+  const [setupOpen, setSetupOpen] = useState(false);
+
+  type Medication = { name: string; dose: string; time: string };
+  type Contact = { name: string; relationship: string };
+  type Appointment = { doctor: string; date: string };
+
+  const [patientName, setPatientName] = useState('');
+  const [medications, setMedications] = useState<Medication[]>([{ name: '', dose: '', time: '' }]);
+  const [contacts, setContacts] = useState<Contact[]>([{ name: '', relationship: '' }]);
+  const [appointments, setAppointments] = useState<Appointment[]>([{ doctor: '', date: '' }]);
   const [thinking, setThinking] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -352,6 +365,112 @@ export default function App() {
   return (
     <View style={styles.screen}>
       <StatusBar style="light" />
+
+      <TouchableOpacity
+        style={styles.shareButton}
+        onPress={async () => {
+          try {
+            const link = `https://t.me/${BOT_USERNAME}?start=${USER_ID}`;
+            await Share.share({ message: `Please click this link and press START in Telegram to become my Oonook Caretaker: ${link}` });
+          } catch {
+            // user cancelled or error — no feedback needed
+          }
+        }}
+        onLongPress={() => setSetupOpen(true)}
+        delayLongPress={5000}
+      >
+        <Text style={styles.shareIcon}>🔗</Text>
+      </TouchableOpacity>
+
+      <Modal visible={setupOpen} animationType="slide" onRequestClose={() => setSetupOpen(false)}>
+        <View style={styles.setupScreen}>
+          <View style={styles.setupHeader}>
+            <Text style={styles.setupTitle}>Caretaker Setup</Text>
+            <TouchableOpacity style={styles.setupClose} onPress={() => setSetupOpen(false)}>
+              <Text style={styles.setupCloseText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.setupScroll} showsVerticalScrollIndicator={false}>
+
+            {/* Patient name */}
+            <Text style={styles.setupSectionLabel}>👤 Patient Name</Text>
+            <TextInput
+              style={styles.setupInput}
+              placeholder="e.g. John"
+              placeholderTextColor="#3A5A3A"
+              value={patientName}
+              onChangeText={setPatientName}
+            />
+
+            {/* Medications */}
+            <Text style={styles.setupSectionLabel}>💊 Medications</Text>
+            {medications.map((med, i) => (
+              <View key={i} style={styles.setupRow}>
+                <TextInput style={[styles.setupInput, styles.setupInputFlex]} placeholder="Name" placeholderTextColor="#3A5A3A" value={med.name}
+                  onChangeText={v => setMedications(prev => prev.map((m, j) => j === i ? { ...m, name: v } : m))} />
+                <TextInput style={[styles.setupInput, styles.setupInputSmall]} placeholder="Dose" placeholderTextColor="#3A5A3A" value={med.dose}
+                  onChangeText={v => setMedications(prev => prev.map((m, j) => j === i ? { ...m, dose: v } : m))} />
+                <TextInput style={[styles.setupInput, styles.setupInputSmall]} placeholder="Time" placeholderTextColor="#3A5A3A" value={med.time}
+                  onChangeText={v => setMedications(prev => prev.map((m, j) => j === i ? { ...m, time: v } : m))} />
+                {medications.length > 1 && (
+                  <TouchableOpacity onPress={() => setMedications(prev => prev.filter((_, j) => j !== i))}>
+                    <Text style={styles.setupRemove}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity style={styles.setupAddBtn} onPress={() => setMedications(prev => [...prev, { name: '', dose: '', time: '' }])}>
+              <Text style={styles.setupAddText}>+ Add Medication</Text>
+            </TouchableOpacity>
+
+            {/* Contacts */}
+            <Text style={styles.setupSectionLabel}>👥 Family & Friends</Text>
+            {contacts.map((c, i) => (
+              <View key={i} style={styles.setupRow}>
+                <TextInput style={[styles.setupInput, styles.setupInputFlex]} placeholder="Name" placeholderTextColor="#3A5A3A" value={c.name}
+                  onChangeText={v => setContacts(prev => prev.map((m, j) => j === i ? { ...m, name: v } : m))} />
+                <TextInput style={[styles.setupInput, styles.setupInputFlex]} placeholder="Relationship" placeholderTextColor="#3A5A3A" value={c.relationship}
+                  onChangeText={v => setContacts(prev => prev.map((m, j) => j === i ? { ...m, relationship: v } : m))} />
+                {contacts.length > 1 && (
+                  <TouchableOpacity onPress={() => setContacts(prev => prev.filter((_, j) => j !== i))}>
+                    <Text style={styles.setupRemove}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity style={styles.setupAddBtn} onPress={() => setContacts(prev => [...prev, { name: '', relationship: '' }])}>
+              <Text style={styles.setupAddText}>+ Add Contact</Text>
+            </TouchableOpacity>
+
+            {/* Appointments */}
+            <Text style={styles.setupSectionLabel}>🏥 Upcoming Appointments</Text>
+            {appointments.map((a, i) => (
+              <View key={i} style={styles.setupRow}>
+                <TextInput style={[styles.setupInput, styles.setupInputFlex]} placeholder="Doctor / Specialist" placeholderTextColor="#3A5A3A" value={a.doctor}
+                  onChangeText={v => setAppointments(prev => prev.map((m, j) => j === i ? { ...m, doctor: v } : m))} />
+                <TextInput style={[styles.setupInput, styles.setupInputSmall]} placeholder="Date" placeholderTextColor="#3A5A3A" value={a.date}
+                  onChangeText={v => setAppointments(prev => prev.map((m, j) => j === i ? { ...m, date: v } : m))} />
+                {appointments.length > 1 && (
+                  <TouchableOpacity onPress={() => setAppointments(prev => prev.filter((_, j) => j !== i))}>
+                    <Text style={styles.setupRemove}>✕</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            ))}
+            <TouchableOpacity style={styles.setupAddBtn} onPress={() => setAppointments(prev => [...prev, { doctor: '', date: '' }])}>
+              <Text style={styles.setupAddText}>+ Add Appointment</Text>
+            </TouchableOpacity>
+
+            {/* Save */}
+            <TouchableOpacity style={styles.setupSaveBtn} onPress={() => setSetupOpen(false)}>
+              <Text style={styles.setupSaveText}>Save & Close</Text>
+            </TouchableOpacity>
+
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </View>
+      </Modal>
 
       <View style={styles.heroArea}>
         {/* micWrapper is 320x320 — rings expand inside here, text is outside */}
@@ -681,5 +800,122 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     borderRadius: 16,
+  },
+
+  shareButton: {
+    position: 'absolute',
+    top: 56,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 10,
+  },
+  shareIcon: {
+    fontSize: 20,
+  },
+
+  setupScreen: {
+    flex: 1,
+    backgroundColor: BG,
+    paddingTop: 56,
+  },
+  setupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  setupTitle: {
+    fontSize: 26,
+    fontWeight: '700',
+    color: GREEN,
+    letterSpacing: 0.5,
+  },
+  setupClose: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  setupCloseText: {
+    fontSize: 18,
+    color: '#FFFFFF',
+  },
+  setupScroll: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  setupSectionLabel: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: GREEN,
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  setupInput: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: '#DDDDDD',
+    fontSize: 16,
+    marginBottom: 8,
+  },
+  setupInputFlex: {
+    flex: 1,
+    marginRight: 8,
+    marginBottom: 0,
+  },
+  setupInputSmall: {
+    width: 90,
+    marginRight: 8,
+    marginBottom: 0,
+  },
+  setupRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  setupRemove: {
+    fontSize: 16,
+    color: '#555555',
+    paddingHorizontal: 4,
+  },
+  setupAddBtn: {
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  setupAddText: {
+    fontSize: 15,
+    color: '#3A5A3A',
+    fontWeight: '600',
+  },
+  setupSaveBtn: {
+    marginTop: 32,
+    backgroundColor: GREEN,
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: 'center',
+  },
+  setupSaveText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    letterSpacing: 0.5,
   },
 });
