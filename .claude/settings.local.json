@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx create-expo-app@latest oonook-tmp --template blank-typescript --no-install)",
+      "Bash(npm install:*)",
+      "Bash(node -e \"console.log\\(require\\(''./node_modules/expo/package.json''\\).version\\)\")",
+      "Bash(node -e \"const p = require\\(''./node_modules/expo/package.json''\\); console.log\\(JSON.stringify\\(p.peerDependencies, null, 2\\)\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(''''react-native:'''', d.get\\(''''react-native'''',''''not found''''\\)\\)\")",
+      "Bash(node -e \"try{const b=require\\(''''./node_modules/expo/bundledNativeModules.json''''\\);console.log\\(''''rn:'''',b[''''react-native'''']\\)}catch\\(e\\){console.log\\(e.message\\)}\")"
+    ]
+  }
+}
