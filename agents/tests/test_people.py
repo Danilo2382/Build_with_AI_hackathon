@@ -20,7 +20,7 @@ def firestore_people():
 async def test_run_returns_agent_response(mock_gemini, firestore_empty):
     db, _ = firestore_empty
     with patch("memory._get_db", return_value=db):
-        from agents.people import run
+        from adk.people.agent import run
         result = await run("demo_user", "Should I call Ana?")
     assert isinstance(result, AgentResponse)
     assert result.agent == "people"
@@ -43,7 +43,7 @@ async def test_run_injects_contacts_into_prompt(firestore_people):
             "vertexai.generative_models.GenerativeModel.generate_content_async",
             side_effect=fake_generate,
         ):
-            import agents.people as ppl
+            import adk.people.agent as ppl
             importlib.reload(ppl)
             await ppl.run("demo_user", "Who should I call?")
 
@@ -54,6 +54,6 @@ async def test_run_injects_contacts_into_prompt(firestore_people):
 async def test_run_writes_memory(mock_gemini, firestore_empty):
     db, doc_ref = firestore_empty
     with patch("memory._get_db", return_value=db):
-        from agents.people import run
+        from adk.people.agent import run
         await run("demo_user", "I called my daughter")
     doc_ref.set.assert_called_once()

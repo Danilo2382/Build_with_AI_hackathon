@@ -1,11 +1,11 @@
 from config import FAST_MODEL
 from vertexai.generative_models import GenerativeModel
 
-from agents.checkup import run as run_checkup
-from agents.exercise import run as run_exercise
-from agents.medication import run as run_medication
-from agents.people import run as run_people
-from agents.vision import run_image, run_video
+from adk.checkup.agent import run as run_checkup
+from adk.exercise.agent import run as run_exercise
+from adk.medication.agent import run as run_medication
+from adk.people.agent import run as run_people
+from adk.vision.agent import run_image, run_video
 from models import AgentResponse
 
 _ROUTER_PROMPT = """You are a routing assistant. Classify the user message into exactly one of these intents:
