@@ -11,6 +11,7 @@ class ChatRequest(BaseModel):
 class VisionRequest(BaseModel):
     user_id: str
     image_base64: str
+    prompt: Optional[str] = None
 
 
 class VideoRequest(BaseModel):

@@ -8,11 +8,11 @@ import org.springframework.web.client.RestClient;
 @Configuration
 public class RestClientConfig {
 
-    @Value("${AGENTS_URL:http://localhost:8000}")
+    @Value("${agents.url:http://localhost:8000}")
     private String agentsUrl;
 
     @Bean
-    public RestClient agentsRestClient() {
+    RestClient agentsRestClient() {
         return RestClient.builder()
                 .baseUrl(agentsUrl)
                 .build();
