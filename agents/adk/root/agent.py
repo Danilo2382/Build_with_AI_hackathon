@@ -4,8 +4,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from config import SMART_MODEL  # noqa: F401 — ensures vertexai.init() is called
+from config import FAST_MODEL, SMART_MODEL  # noqa: F401 — ensures vertexai.init() is called
 from google.adk.agents import LlmAgent
+from vertexai.generative_models import GenerativeModel
 
 from adk.checkup.agent import root_agent as checkup_agent
 from adk.exercise.agent import root_agent as exercise_agent
@@ -13,7 +14,8 @@ from adk.medication.agent import root_agent as medication_agent
 from adk.news.agent import root_agent as news_agent
 from adk.people.agent import root_agent as people_agent
 from adk.vision.agent import root_agent as vision_agent
-from memory import get_checkups, get_medications, get_profile, get_reminders
+from memory import get_checkups, get_emergency_contacts, get_medications, get_profile, get_reminders
+from telegram import send_message
 
 
 async def get_user_profile() -> dict:
@@ -36,6 +38,56 @@ async def get_current_datetime() -> dict:
     }
 
 
+async def _ai_reasoning(user_message: str) -> str:
+    """Generate a one-sentence emergency assessment using Gemini."""
+    model = GenerativeModel(model_name=FAST_MODEL)
+    prompt = (
+        f"An elderly person said: \"{user_message}\"\n"
+        "In one short sentence, describe what kind of emergency this might be "
+        "and what their contact should do. Be direct and calm."
+    )
+    response = await model.generate_content_async(prompt)
+    return response.text.strip()
+
+
+async def call_for_help(trigger_message: str) -> str:
+    """Send an emergency alert to all emergency contacts via Telegram.
+    Call this IMMEDIATELY if the user screams for help, says they fell, are hurt,
+    can't breathe, feel chest pain, or expresses any distress or danger signal.
+    Do not ask for confirmation — act immediately.
+
+    Args:
+        trigger_message: The exact message the user said that triggered the emergency.
+    """
+    profile = await get_profile("nikola")
+    name = profile.get("name", "The user")
+    contacts = await get_emergency_contacts("nikola")
+
+    if not contacts:
+        return "No emergency contacts configured."
+
+    reasoning = await _ai_reasoning(trigger_message)
+    timestamp = datetime.now().strftime("%d %B %Y, %H:%M")
+
+    message = (
+        f"🚨 {name} might need help, reach out immediately.\n\n"
+        f"💬 They said: \"{trigger_message}\"\n\n"
+        f"🤖 {reasoning}\n\n"
+        f"🕐 {timestamp}"
+    )
+
+    sent = 0
+    for contact in contacts:
+        chat_id = contact.get("telegram_chat_id")
+        if chat_id:
+            await send_message(chat_id, message)
+            sent += 1
+
+    if sent == 0:
+        return "Emergency contacts found but no Telegram chat IDs configured yet."
+    return f"Emergency alert sent to {sent} contact(s)."
+
+
 async def get_health_summary() -> dict:
     """Get a combined health overview: medications, upcoming checkups, and exercise streak."""
     meds = await get_medications("nikola")
@@ -56,6 +108,16 @@ root_agent = LlmAgent(
 You already know who the user is — never ask for their name or any identity information.
 Use get_user_profile to personalise your greeting. Use get_current_datetime to be time-aware.
 Use get_todays_reminders or get_health_summary to answer overview questions.
+
+EMERGENCY: This is a voice interface for an elderly user — transcription may be imperfect.
+Call call_for_help IMMEDIATELY, without asking for confirmation, passing the user's exact message as trigger_message, if the input contains ANY of:
+- Calls for help: "help", "please help", "somebody help", "anyone there", "help me"
+- Physical distress: "fell", "fallen", "can't get up", "I'm on the floor", "I'm hurt", "injured", "bleeding"
+- Medical distress: "can't breathe", "chest pain", "my heart", "dizzy", "feeling faint", "going to pass out"
+- Fear or urgency: "scared", "something's wrong", "emergency", "ambulance", "call someone", "I think I'm dying"
+- Vague but urgent: "I don't feel good", "something happened", "I need someone", "please"
+When in doubt, send the alert. A false positive is far better than missing a real emergency.
+
 Delegate specialist requests immediately to the appropriate sub-agent:
 - medication: pills, doses, schedules, reminders
 - exercise: physical activity, stretching, movement
@@ -63,6 +125,6 @@ Delegate specialist requests immediately to the appropriate sub-agent:
 - people: staying in touch with family and friends
 - vision: describing images or videos
 - news: current weather forecast and latest news headlines""",
-    tools=[get_user_profile, get_todays_reminders, get_current_datetime, get_health_summary],
+    tools=[get_user_profile, get_todays_reminders, get_current_datetime, get_health_summary, call_for_help],
     sub_agents=[medication_agent, exercise_agent, checkup_agent, people_agent, vision_agent, news_agent],
 )

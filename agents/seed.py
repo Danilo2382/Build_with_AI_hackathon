@@ -75,6 +75,8 @@ async def seed():
             "last_contact": "2026-03-14",
             "days_since": 14,
             "notes": "Calls every Sunday, lives in Novi Sad",
+            "emergency_contact": True,
+            "telegram_chat_id": "",  # fill in after /start with the bot
         },
         {
             "id": "con_002",
@@ -146,6 +148,12 @@ async def seed():
         chk_id = checkup.pop("id")
         await db.collection("checkups").document(chk_id).set(checkup)
     print("✓ checkups")
+
+    # ── App config ─────────────────────────────────────────────
+    await db.collection("app_config").document("telegram").set({
+        "bot_token": "",  # fill in with BotFather token
+    }, merge=True)
+    print("✓ app_config/telegram")
 
     print("\nDone. Firestore seeded for nikola.")
 
