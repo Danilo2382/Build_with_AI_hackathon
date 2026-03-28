@@ -1,17 +1,22 @@
 # Frontend Spec — Dev 1
 
 ## Overview
+
 Single-screen, voice-first Expo React Native app for elderly users. No navigation, no text input, no loading spinners. All feedback is via voice (TTS). Minimum font size 32px everywhere.
 
 ## Stack
+
 - Expo SDK 51
 - React Native + TypeScript
 - Expo Router (single screen only)
-- expo-av (audio recording + TTS playback)
+- expo-audio (audio recording + TTS playback) ← replaces expo-av
+- expo-video (video playback in media zone) ← replaces expo-av for video
 - expo-camera (photo + video capture)
+- expo-speech (TTS — speaks responses and thinking prompt aloud)
 - No external HTTP libraries — use `fetch` only
 
 ## Environment
+
 ```
 EXPO_PUBLIC_BACKEND_URL=http://localhost:8080
 ```
@@ -35,24 +40,27 @@ EXPO_PUBLIC_BACKEND_URL=http://localhost:8080
 ```
 
 ## Mic Button — Push to Talk
+
 Four states:
 
-| State | Visual | Audio |
-|---|---|---|
-| idle | gray | — |
-| listening | red, pulsing | — |
-| thinking | animated spinner | plays "Let me check that..." via TTS |
-| responding | blue, sound wave | speaks full response via TTS |
+| State      | Visual           | Audio                                        |
+| ---------- | ---------------- | -------------------------------------------- |
+| idle       | gray             | —                                            |
+| listening  | red, pulsing     | —                                            |
+| thinking   | animated spinner | plays "Let me check that..." via expo-speech |
+| responding | blue, sound wave | speaks full response via expo-speech         |
 
-Flow: hold → record audio → release → POST /chat → TTS response.
+Flow: hold → record audio via **expo-audio** → release → POST /chat → speak response via **expo-speech**.
 
 ## Camera Button
+
 - **Tap** → capture photo → POST /vision
 - **Hold** → record video → POST /video
 - Result appears in media zone
 - Never auto-opens
 
 ## Reminders Strip
+
 - Horizontal scroll, always visible when idle
 - Fetch on mount from `GET /reminders?user_id=demo_user`
 - Five types: 💊 medication | 🧘 stretching | 💪 exercise | 🏥 checkup | 👥 people
@@ -60,9 +68,10 @@ Flow: hold → record audio → release → POST /chat → TTS response.
 - Tap any card → trigger voice interaction: sends a predefined message to `POST /chat` based on reminder type (e.g. tapping 💊 Aspirin sends `"Tell me about my Aspirin reminder"`, tapping 👥 Call Ana sends `"Should I call Ana?"`). No mic recording needed — message is synthetic.
 
 ## Media Zone
+
 - Hidden by default
-- Image: full width, caption below
-- Video: inline, autoplay muted
+- Image: full width, caption below — rendered via React Native `<Image>`
+- Video: inline, autoplay muted — rendered via **expo-video** `<VideoView>`
 - Tap → fullscreen; tap X → close
 
 ## API Contract
@@ -91,10 +100,12 @@ POST /reminders/confirm
 ```
 
 On any error:
-- If response is valid JSON with `fallback_response` field → speak it via TTS
+
+- If response is valid JSON with `fallback_response` field → speak it via expo-speech
 - If response cannot be parsed as JSON (e.g. network timeout, 502 HTML page) → speak hardcoded fallback: `"Sorry, I cannot connect. Please try again."`
 
 ## Constraints
+
 - Font minimum 32px everywhere
 - High contrast (no grays for text)
 - No loading spinners — always voice feedback
