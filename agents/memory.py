@@ -35,6 +35,11 @@ async def get_contacts(user_id: str) -> list[dict]:
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
 
+async def get_emergency_contacts(user_id: str) -> list[dict]:
+    docs = await _get_db().collection("contacts").where("userId", "==", user_id).where("emergency_contact", "==", True).get()
+    return [{"id": d.id, **d.to_dict()} for d in docs]
+
+
 async def update_contact(user_id: str, contact_id: str, updates: dict) -> None:
     await _get_db().collection("contacts").document(contact_id).set(updates, merge=True)
 
