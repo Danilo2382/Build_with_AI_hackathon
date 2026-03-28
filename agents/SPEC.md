@@ -29,13 +29,15 @@ GOOGLE_APPLICATION_CREDENTIALS=/secrets/sa.json
 ## Endpoints
 
 ### POST /chat
+Frontend sends audio; agents decode and pass to Gemini which handles STT natively.
 ```json
 // Request
-{ "user_id": "demo_user", "message": "When do I take my aspirin?" }
+{ "user_id": "demo_user", "audio_base64": "<base64 encoded m4a audio>" }
 
 // Response
 { "response": "You take Aspirin at 8am and 8pm.", "agent": "medication", "media": null }
 ```
+Gemini 1.5 Flash accepts audio natively — no separate STT step needed. Decode base64 → pass raw audio bytes as inline media part to Gemini.
 
 ### POST /vision
 ```json
@@ -191,6 +193,28 @@ reminders/       {rem_id}    userId, title, description, time, auto_generated (b
 ```
 - `auto_generated: true` — created by `/reminders/generate`; deleted and regenerated each run
 - `auto_generated: false` — created by `/reminders/voice`; permanent, never overwritten
+
+### checkup document
+```json
+{
+  "patient_name": "John",
+  "appointments": [
+    { "doctor": "Dr. Smith", "date": "April 5" }
+  ]
+}
+```
+
+### medication document (updated — includes patient name)
+```json
+{
+  "patient_name": "John",
+  "medications": [
+    { "name": "Aspirin", "dose": "100mg", "time": "morning and evening" }
+  ],
+  "last_confirmed": { "Aspirin": "2026-03-28T08:05:00Z" },
+  "notes": "Take with food"
+}
+```
 
 ## Memory Read/Write Pattern
 On each agent call:
