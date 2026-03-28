@@ -4,8 +4,9 @@ import config  # noqa: F401 — ensures vertexai.init() is called
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from adk.reminders.agent import run as run_reminders, run_voice as run_voice_reminder
 from adk.vision.agent import run_image, run_video
-from models import AgentResponse, ChatRequest, VideoRequest, VisionRequest
+from models import AgentResponse, ChatRequest, GenerateRemindersRequest, VideoRequest, VisionRequest, VoiceReminderRequest
 from router import route
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,16 @@ async def health() -> dict:
 @app.post("/chat", response_model=AgentResponse)
 async def chat(body: ChatRequest) -> AgentResponse:
     return await route(body.user_id, body.message)
+
+
+@app.post("/reminders/generate")
+async def generate_reminders(body: GenerateRemindersRequest) -> dict:
+    return await run_reminders(body.user_id)
+
+
+@app.post("/reminders/voice")
+async def voice_reminder(body: VoiceReminderRequest) -> dict:
+    return await run_voice_reminder(body.user_id, body.message)
 
 
 @app.post("/vision/image", response_model=AgentResponse)
