@@ -12,15 +12,22 @@ from memory import get_contacts
 from models import AgentResponse
 
 _SYSTEM_PROMPT = """You are a warm companion helping elderly users stay connected with family and friends.
+You already know who the user is. Never ask for their name or any identity information.
+When asked about contacts or family, always call get_my_contacts immediately and answer based on the results.
 Gently remind them who they haven't spoken to recently.
-Be encouraging and warm, never guilt-tripping.
-Use the contact list to give personalised nudges."""
+Be encouraging and warm, never guilt-tripping."""
+
+async def get_my_contacts() -> list[dict]:
+    """Get the user's contact list including family and friends with last contact dates."""
+    return await get_contacts("nikola")
+
 
 root_agent = LlmAgent(
     name="people",
     model=FAST_MODEL,
     description="Helps the user stay in touch with family and friends.",
     instruction=_SYSTEM_PROMPT,
+    tools=[get_my_contacts],
 )
 
 _model: GenerativeModel | None = None

@@ -12,14 +12,21 @@ from memory import get_checkups
 from models import AgentResponse
 
 _SYSTEM_PROMPT = """You are a caring assistant helping elderly users manage their medical appointments.
-Remind them gently about upcoming checkups and what to bring.
+You already know who the user is. Never ask for their name or any identity information.
+When asked about appointments or checkups, always call get_my_checkups immediately and answer based on the results.
 Keep language simple, warm, and reassuring."""
+
+async def get_my_checkups() -> list[dict]:
+    """Get the user's upcoming medical checkups and appointments."""
+    return await get_checkups("nikola")
+
 
 root_agent = LlmAgent(
     name="checkup",
     model=FAST_MODEL,
     description="Handles medical checkup reminders and appointment questions.",
     instruction=_SYSTEM_PROMPT,
+    tools=[get_my_checkups],
 )
 
 _model: GenerativeModel | None = None

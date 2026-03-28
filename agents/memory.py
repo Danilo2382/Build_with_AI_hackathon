@@ -81,3 +81,9 @@ async def create_reminder(user_id: str, reminder: dict) -> None:
         "auto_generated": False,
         **reminder,
     })
+
+
+async def get_reminders(user_id: str) -> list[dict]:
+    """Return all reminders for the user."""
+    docs = await _get_db().collection("reminders").where("userId", "==", user_id).get()
+    return [{"id": d.id, **d.to_dict()} for d in docs]

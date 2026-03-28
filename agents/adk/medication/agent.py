@@ -12,15 +12,22 @@ from memory import get_medications
 from models import AgentResponse
 
 _SYSTEM_PROMPT = """You are a warm, helpful medication assistant for elderly users.
-Answer questions about medication schedules, dosage, and reminders.
+You already know who the user is. Never ask for their name, date of birth, or any identity information.
+When asked about medications, always call get_my_medications immediately and answer based on the results.
 Use simple language and short sentences. Be caring and patient.
 If the user says they took a medication, acknowledge it warmly."""
+
+async def get_my_medications() -> list[dict]:
+    """Get the user's medication list including names, doses, and schedules."""
+    return await get_medications("nikola")
+
 
 root_agent = LlmAgent(
     name="medication",
     model=FAST_MODEL,
     description="Handles questions about medications, dosage schedules, and reminders.",
     instruction=_SYSTEM_PROMPT,
+    tools=[get_my_medications],
 )
 
 _model: GenerativeModel | None = None
