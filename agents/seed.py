@@ -1,5 +1,5 @@
 """
-Seed script — populates Firestore with demo data for demo_user.
+Seed script — populates Firestore with demo data for nikola.
 Run from agents/ directory: python3.11 seed.py
 """
 import asyncio
@@ -9,7 +9,7 @@ sys.path.insert(0, '.')
 import config  # noqa — ensures env vars are loaded
 from google.cloud import firestore
 
-USER_ID = "demo_user"
+USER_ID = "nikola"
 
 
 async def seed():
@@ -17,7 +17,7 @@ async def seed():
 
     # ── User profile ───────────────────────────────────────────
     await db.collection("users").document(USER_ID).set({
-        "name": "Mirko",
+        "name": "Nikola Nikolic",
         "age": 72,
         "language": "sr",
         "voice_speed": "slow",
@@ -147,12 +147,7 @@ async def seed():
         await db.collection("checkups").document(chk_id).set(checkup)
     print("✓ checkups")
 
-    # ── Reminders — link to medications and contacts ───────────
-    await db.collection("reminders").document("rem_001").update({"linked_id": "med_001"})
-    await db.collection("reminders").document("rem_003").update({"linked_id": "con_001"})
-    print("✓ reminders linked")
-
-    print("\nDone. Firestore seeded for demo_user.")
+    print("\nDone. Firestore seeded for nikola.")
 
 
 asyncio.run(seed())

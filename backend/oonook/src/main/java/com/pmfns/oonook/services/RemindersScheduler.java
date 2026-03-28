@@ -12,12 +12,12 @@ public class RemindersScheduler {
 
     private final AgentsService agentsService;
 
-    // Regenerate reminders for demo_user every 6 hours
+    // Regenerate reminders for nikola every 6 hours
     @Scheduled(cron = "0 0 */6 * * *")
     public void generateReminders() {
-        log.info("Generating reminders for demo_user");
+        log.info("Generating reminders for nikola");
         try {
-            agentsService.generateReminders("demo_user");
+            agentsService.generateReminders("nikola");
             log.info("Reminders generated successfully");
         } catch (Exception e) {
             log.error("Failed to generate reminders: {}", e.getMessage());
