@@ -17,7 +17,6 @@ Python FastAPI service at port 8000. Handles all AI logic using **Google ADK** (
 GOOGLE_CLOUD_PROJECT=oonook-demo
 GOOGLE_CLOUD_LOCATION=us-central1
 GCS_BUCKET=oonook-media
-FIRESTORE_EMULATOR_HOST=firestore:9090    # local only; unset in prod
 GOOGLE_APPLICATION_CREDENTIALS=/secrets/sa.json
 ```
 
@@ -58,6 +57,32 @@ Gemini 1.5 Flash accepts audio natively — no separate STT step needed. Decode 
 { "response": "I can see you doing the exercise correctly.", "agent": "vision", "media": { "type": "video", "url": "https://storage.googleapis.com/..." } }
 ```
 
+### POST /reminders/generate
+Triggered by the backend scheduler every 6 hours to regenerate AI-based reminders for a user.
+```json
+// Request
+{ "user_id": "demo_user" }
+
+// Response
+{ "status": "ok", "count": 12 }
+```
+- Reads `medications`, `contacts`, and `checkups` collections from Firestore
+- Calls Gemini to generate up to 12 actionable reminders
+- Deletes all previous `auto_generated: true` reminders for the user, then writes new ones
+- Manual reminders (`auto_generated: false`) are never touched
+
+### POST /reminders/voice
+Creates a single custom reminder from a voice/text message. Permanent — never overwritten by scheduled generation.
+```json
+// Request
+{ "user_id": "demo_user", "message": "Remind me to drink water every morning" }
+
+// Response
+{ "status": "ok" }
+```
+- Parses the message into a structured reminder with `title`, `description`, and `time`
+- Writes to `reminders` collection with `auto_generated: false`
+
 ### GET /health
 ```json
 { "status": "ok" }
@@ -69,18 +94,31 @@ Gemini 1.5 Flash accepts audio natively — no separate STT step needed. Decode 
 POST /chat
     │
     ▼
-RouterAgent  (gemini-1.5-flash, stateless)
-    │  classifies intent from message
-    ├──► MedicationAgent   → "medication"  [has memory]
-    ├──► ExerciseAgent     → "exercise" | "stretching"  [has memory]
-    ├──► CheckupAgent      → "checkup"  [stateless]
-    └──► PeopleAgent       → "people"   [has memory]
-
-POST /vision / POST /video
+router.py  (intent classification)
     │
     ▼
-VisionAgent  (gemini-1.5-pro, stateless)
-    └──► uploads media to GCS, returns URL
+adk/root/agent.py  ← root_agent (ADK orchestrator, gemini-2.5-pro)
+    │  delegates to sub-agents based on descriptions
+    ├──► MedicationAgent   → reads medications collection
+    ├──► ExerciseAgent     → reads/writes exercise collection
+    ├──► CheckupAgent      → reads checkups collection
+    ├──► PeopleAgent       → reads contacts collection
+    └──► VisionAgent       → gemini-1.5-pro, image/video analysis
+
+POST /reminders/generate
+    │
+    ▼
+adk/reminders/agent.py  run()
+    └──► reads medications + contacts + checkups → Gemini → writes reminders
+
+POST /reminders/voice
+    │
+    ▼
+adk/reminders/agent.py  run_voice()
+    └──► parses voice message → writes single permanent reminder
+
+adk web (dev UI)
+    └──► scans adk/ subdirectories, picks up root_agent from each agent.py
 ```
 
 ## Agent Definitions
@@ -130,47 +168,31 @@ VisionAgent  (gemini-1.5-pro, stateless)
 - Bucket is configured for public read — no signed URLs needed
 - Returns `media: { type: "image"|"video", url: "https://storage.googleapis.com/oonook-media/..." }`
 
-## Long-Term Memory — Firestore Schema
+## Firestore Schema
 
-Each memory document lives at the full Firestore path:
-```
-agent_memory (collection)
-  └── {user_id} (document)
-        └── {domain} (subcollection: "medication" | "exercise" | "people")
-              └── data (document)  ← actual memory fields stored here
-```
-Shorthand used elsewhere in this spec: `agent_memory/{user_id}/{domain}/data`
+Flat root-level collections. All user-scoped documents include a `userId` field and are filtered with `.where("userId", "==", user_id)`.
 
-### medication document
+```
+users/           {user_id}                    — profile (name, age, language)
+medications/     {med_id}    userId, name, dose, schedule, notes
+contacts/        {con_id}    userId, name, relationship, phone, last_contact
+exercise/        {user_id}                    — state doc (streak_days, limitations)
+checkups/        {chk_id}    userId, doctor, specialty, date, location
+reminders/       {rem_id}    userId, title, description, time, auto_generated (bool)
+```
+
+### reminders collection
 ```json
 {
-  "medications": [
-    { "name": "Aspirin", "dose": "100mg", "schedule": ["08:00", "20:00"] }
-  ],
-  "last_confirmed": { "Aspirin": "2026-03-28T08:05:00Z" },
-  "notes": "Take with food"
+  "userId": "demo_user",
+  "title": "Take Aspirin",
+  "description": "100mg — take with water",
+  "time": "08:00",
+  "auto_generated": true
 }
 ```
-
-### exercise document
-```json
-{
-  "last_session": "2026-03-27",
-  "streak_days": 3,
-  "history": [
-    { "date": "2026-03-27", "type": "stretching", "duration_min": 10 }
-  ]
-}
-```
-
-### people document
-```json
-{
-  "contacts": [
-    { "name": "Ana", "relationship": "daughter", "last_contact": "2026-03-14", "days_since": 14 }
-  ]
-}
-```
+- `auto_generated: true` — created by `/reminders/generate`; deleted and regenerated each run
+- `auto_generated: false` — created by `/reminders/voice`; permanent, never overwritten
 
 ### checkup document
 ```json
@@ -196,37 +218,29 @@ Shorthand used elsewhere in this spec: `agent_memory/{user_id}/{domain}/data`
 
 ## Memory Read/Write Pattern
 On each agent call:
-1. **Read** memory doc from Firestore for `user_id`
+1. **Read** relevant collection(s) from Firestore for `user_id`
 2. **Inject** relevant facts as additional context into the Gemini prompt
 3. Call Gemini, get response
-4. **Write** any updates back to the memory doc (e.g. new exercise session, confirmed medication)
-
-```python
-async def get_memory(user_id: str, domain: str) -> dict:
-    doc = db.collection("agent_memory").document(user_id).collection(domain).document("data")
-    snap = await doc.get()
-    return snap.to_dict() or {}
-
-async def update_memory(user_id: str, domain: str, updates: dict):
-    doc = db.collection("agent_memory").document(user_id).collection(domain).document("data")
-    await doc.set(updates, merge=True)
-```
+4. **Write** any updates back (e.g. exercise streak increment)
 
 ## File Structure
 ```
 agents/
 ├── main.py                  # FastAPI app + endpoint definitions
-├── router.py                # RouterAgent — intent classification + dispatch
-├── agents/
-│   ├── medication.py        # MedicationAgent + memory
-│   ├── exercise.py          # ExerciseAgent + memory
-│   ├── checkup.py           # CheckupAgent (stateless)
-│   ├── people.py            # PeopleAgent + memory
-│   └── vision.py            # VisionAgent (image + video)
-├── memory.py                # Firestore memory helpers (get/update)
-├── gcs.py                   # GCS upload helper
+├── router.py                # Intent classification + dispatch to domain agents
+├── memory.py                # Firestore helpers (get/write per collection)
 ├── models.py                # Pydantic request/response schemas
-├── config.py                # env var loading
+├── config.py                # env var loading + vertexai.init()
+├── seed.py                  # One-time Firestore seeding script (demo data)
+├── adk/
+│   ├── root/agent.py        # ADK root orchestrator (adk web entry point)
+│   ├── medication/agent.py  # MedicationAgent — reads medications collection
+│   ├── exercise/agent.py    # ExerciseAgent — reads/writes exercise collection
+│   ├── checkup/agent.py     # CheckupAgent — reads checkups collection
+│   ├── people/agent.py      # PeopleAgent — reads contacts collection
+│   ├── vision/agent.py      # VisionAgent — image + video via Gemini Pro
+│   └── reminders/agent.py   # run() for AI generation, run_voice() for custom
+├── gcs.py                   # GCS upload helper
 └── requirements.txt
 ```
 
@@ -260,5 +274,5 @@ uvicorn main:app --reload --port 8000
 ```
 Requires `GOOGLE_APPLICATION_CREDENTIALS` pointing to a service account with:
 - `roles/aiplatform.user` (Vertex AI)
-- `roles/datastore.user` (Firestore — or use emulator locally)
+- `roles/datastore.user` (Firestore)
 - `roles/storage.objectAdmin` (GCS media bucket)
