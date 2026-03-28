@@ -14,7 +14,7 @@ Thin Spring Boot proxy. Receives requests from the frontend, forwards AI calls t
 ```
 AGENTS_URL=http://agents:8000
 FIRESTORE_EMULATOR_HOST=firestore:9090
-GOOGLE_CLOUD_PROJECT=pratilac-demo
+GOOGLE_CLOUD_PROJECT=oonook-demo
 ```
 
 ## Base URLs
@@ -100,7 +100,7 @@ All errors (including forwarding failures) return this shape so the frontend can
 
 ## File Structure
 ```
-backend/src/main/java/com/pratilac/
+backend/src/main/java/com/oonook/
 ├── controllers/
 │   ├── ChatController.java
 │   ├── VisionController.java
@@ -118,7 +118,7 @@ backend/src/main/java/com/pratilac/
 │   └── ErrorResponse.java
 ├── config/
 │   └── RestClientConfig.java      # WebClient or RestClient bean
-└── PratilacApplication.java
+└── OonookApplication.java
 ```
 
 ## Firestore Data Model

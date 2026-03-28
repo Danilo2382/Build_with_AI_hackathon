@@ -1,0 +1,28 @@
+# ── Secrets & Config ──────────────────────────────────────
+config/.env
+config/sa.json
+secrets/
+
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+.env
+*.egg-info/
+dist/
+.pytest_cache/
+
+# ── Java / Maven ──────────────────────────────────────────
+target/
+*.class
+*.jar
+.mvn/
+
+# ── Node / Expo ───────────────────────────────────────────
+node_modules/
+.expo/
+*.tsbuildinfo
+
+# ── OS ────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
