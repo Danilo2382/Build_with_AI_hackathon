@@ -14,9 +14,9 @@ Python FastAPI service at port 8000. Handles all AI logic using **Google ADK** (
 
 ## Environment Variables
 ```
-GOOGLE_CLOUD_PROJECT=pratilac-demo
+GOOGLE_CLOUD_PROJECT=oonook-demo
 GOOGLE_CLOUD_LOCATION=us-central1
-GCS_BUCKET=pratilac-media
+GCS_BUCKET=oonook-media
 FIRESTORE_EMULATOR_HOST=firestore:9090    # local only; unset in prod
 GOOGLE_APPLICATION_CREDENTIALS=/secrets/sa.json
 ```
@@ -124,9 +124,9 @@ VisionAgent  (gemini-1.5-pro, stateless)
 - Model: `gemini-1.5-pro`
 - Accepts base64-encoded image or video
 - Describes what it sees in simple language for an elderly user
-- Uploads media to GCS bucket (`pratilac-media`), returns public HTTPS URL
+- Uploads media to GCS bucket (`oonook-media`), returns public HTTPS URL
 - Bucket is configured for public read — no signed URLs needed
-- Returns `media: { type: "image"|"video", url: "https://storage.googleapis.com/pratilac-media/..." }`
+- Returns `media: { type: "image"|"video", url: "https://storage.googleapis.com/oonook-media/..." }`
 
 ## Long-Term Memory — Firestore Schema
 

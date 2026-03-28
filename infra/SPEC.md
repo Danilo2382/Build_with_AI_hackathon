@@ -5,7 +5,7 @@ Local development environment using Docker Compose + Firestore emulator. All ser
 
 ## GCP Project (for Vertex AI + GCS — used even locally)
 ```
-Project ID: pratilac-demo
+Project ID: oonook-demo
 Region:     us-central1
 ```
 Even in local dev, Vertex AI (Gemini) and GCS calls go to real GCP. Only Firestore is emulated locally.
@@ -33,7 +33,7 @@ services:
     environment:
       AGENTS_URL: http://agents:8000
       FIRESTORE_EMULATOR_HOST: firestore:9090
-      GOOGLE_CLOUD_PROJECT: pratilac-demo
+      GOOGLE_CLOUD_PROJECT: oonook-demo
     depends_on:
       - agents
       - firestore
@@ -43,9 +43,9 @@ services:
     ports:
       - "8000:8000"
     environment:
-      GOOGLE_CLOUD_PROJECT: pratilac-demo
+      GOOGLE_CLOUD_PROJECT: oonook-demo
       GOOGLE_CLOUD_LOCATION: us-central1
-      GCS_BUCKET: pratilac-media
+      GCS_BUCKET: oonook-media
       FIRESTORE_EMULATOR_HOST: firestore:9090
       GOOGLE_APPLICATION_CREDENTIALS: /secrets/sa.json
     volumes:
@@ -58,7 +58,7 @@ services:
     command: >
       gcloud emulators firestore start
       --host-port=0.0.0.0:9090
-      --project=pratilac-demo
+      --project=oonook-demo
     ports:
       - "9090:9090"
 ```
@@ -87,7 +87,7 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 ## GCP Resources Needed (even for local dev)
 
 ### Service Account
-- Name: `pratilac-sa@pratilac-demo.iam.gserviceaccount.com`
+- Name: `oonook-sa@oonook-demo.iam.gserviceaccount.com`
 - Roles:
   - `roles/aiplatform.user` — Vertex AI / Gemini calls (agents)
   - `roles/storage.objectAdmin` — GCS media bucket (agents)
@@ -95,14 +95,14 @@ CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
 - Key file: download as JSON → place at `./secrets/sa.json` (gitignored)
 
 ### Cloud Storage Bucket
-- Name: `pratilac-media`
+- Name: `oonook-media`
 - Location: `us-central1`
 - Access: uniform, public read (for media URLs served to frontend)
 
 Create once:
 ```bash
-gsutil mb -l us-central1 gs://pratilac-media
-gsutil iam ch allUsers:objectViewer gs://pratilac-media
+gsutil mb -l us-central1 gs://oonook-media
+gsutil iam ch allUsers:objectViewer gs://oonook-media
 ```
 
 ### Firestore
