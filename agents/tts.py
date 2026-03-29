@@ -1,6 +1,6 @@
 import base64
 
-from google.cloud import texttospeech_v1 as texttospeech
+from google.cloud import texttospeech
 
 
 _client: texttospeech.TextToSpeechAsyncClient | None = None

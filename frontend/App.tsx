@@ -20,7 +20,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 
 import { C, PHOTO_H, PHOTO_W, pm, ps, s } from './styles';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8080';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.157.195.91:8080';
 const USER_ID = 'nikola';
 const BOT_USERNAME = 'Oonook_Hackathon_Bot';
 
@@ -693,7 +693,87 @@ export default function App() {
         </View>
       </Modal>
 
-      {/* Photo overlay */}
+      <View style={styles.heroArea}>
+        {/* micWrapper is 320x320 — rings expand inside here, text is outside */}
+        <View style={styles.micWrapper}>
+          <Animated.View style={[styles.glow, { opacity: glowOpacity }]} />
+          <PulseRing animate={listening || thinking} delay={0} />
+          <PulseRing animate={listening || thinking} delay={450} />
+          <PulseRing animate={listening || thinking} delay={900} />
+
+          <Animated.View style={{ transform: [{ scale: listening ? buttonScale : breathe }] }}>
+            <TouchableOpacity
+              style={[styles.micButton, listening && styles.micButtonActive]}
+              onPressIn={onPressIn}
+              onPressOut={onPressOut}
+              activeOpacity={1}
+              disabled={thinking}
+            >
+              <Text style={styles.micIcon}>🎙️</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <RotatingRing listening={listening} />
+        </View>
+
+        <Animated.Text style={[styles.micHint, (listening || thinking) && styles.micHintActive, { opacity: hintOpacity }]}>
+          {listening ? 'Listening…' : thinking ? 'Thinking…' : 'Hold to speak'}
+        </Animated.Text>
+      </View>
+
+      {/* Camera */}
+      <TouchableOpacity style={styles.cameraButton} activeOpacity={0.7} onPress={openCamera}>
+        <Text style={styles.cameraIcon}>📷</Text>
+        <Text style={styles.cameraLabel}>Camera</Text>
+      </TouchableOpacity>
+
+      {/* Camera modal */}
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+        <View style={styles.cameraScreen}>
+          <CameraView ref={cameraRef} style={styles.cameraPreview} facing="back" />
+          <View style={styles.cameraControls}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setCameraOpen(false)}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.captureButton} onPress={takePicture} disabled={processing}>
+              <View style={styles.captureInner} />
+            </TouchableOpacity>
+            <View style={{ width: 56 }} />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Reminders */}
+      {next && (
+      <View style={styles.remindersArea}>
+        <TouchableOpacity
+          style={styles.reminderPill}
+          onPress={() => setRemindersOpen((v) => !v)}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.reminderPillIcon}>{next.icon}</Text>
+          <Text style={styles.reminderPillText}>{next.label}</Text>
+          <Text style={styles.reminderPillTime}>{next.time}</Text>
+          <Text style={[styles.reminderChevron, remindersOpen && styles.reminderChevronOpen]}>
+            {remindersOpen ? '▲' : '▼'}
+          </Text>
+        </TouchableOpacity>
+
+        {remindersOpen && (
+          <ScrollView style={styles.remindersDropdown} showsVerticalScrollIndicator={false}>
+            {reminders.slice(1).map((r) => (
+              <TouchableOpacity key={r.id} style={styles.reminderRow}>
+                <Text style={styles.reminderRowIcon}>{r.icon}</Text>
+                <Text style={styles.reminderRowLabel}>{r.label}</Text>
+                <Text style={styles.reminderRowTime}>{r.time}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
+      </View>
+      )}
+
+      {/* Photo shrink animation overlay */}
       {capturedUri && (
         <Animated.View
           pointerEvents="none"
