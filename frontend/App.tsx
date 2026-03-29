@@ -3,47 +3,41 @@ import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
-  Dimensions,
   Easing,
   Image,
   Modal,
   ScrollView,
   Share,
-  StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import Svg, { Path, Circle } from 'react-native-svg';
+import Svg, { Circle, Path } from 'react-native-svg';
 
-const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const PHOTO_W = SCREEN_W * 0.55;
-const PHOTO_H = SCREEN_H * 0.35;
+import { C, PHOTO_H, PHOTO_W, pm, ps, s } from './styles';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.157.195.91:8080';
 const USER_ID = 'nikola';
 const BOT_USERNAME = 'Oonook_Hackathon_Bot';
 
-// ── Palette ──────────────────────────────────────────────────────────────────
-const C = {
-  bg:          '#F7EDE8',
-  card:        '#EDD9D0',
-  white:       '#FDFAF9',
-  blush:       '#F2C9BB',
-  warm:        '#D4957F',
-  deep:        '#B07060',
-  borderDef:   '#C9B8B0',
-  borderStr:   '#C9948A',
-  textPrimary: '#3A2420',
-  textSec:     '#7A5048',
-  textHint:    '#A8806E',
+export type Reminder = {
+  id: string;
+  icon: string;
+  label: string;
+  time: string;
+  type: 'medication' | 'exercise' | 'people' | 'checkup';
 };
 
-type Reminder = { id: string; icon: string; label: string; time: string; type: 'medication' | 'exercise' | 'people' | 'checkup' };
+export type Person = {
+  id: string;
+  name: string;
+  relationship: string;
+  image_base64?: string;
+};
 
 const REMINDERS_PLACEHOLDER: Reminder[] = [
   { id: '1', icon: '💊', label: 'Aspirin',    time: '08:00', type: 'medication' },
@@ -72,7 +66,11 @@ function getDateStr(): string {
   return new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
 }
 
-// ── BlushPulseRing ────────────────────────────────────────────────────────────
+function toImgUri(raw: string): string {
+  return raw.startsWith('data:') ? raw : `data:image/jpeg;base64,${raw}`;
+}
+
+// ── BlushPulseRing ─────────────────────────────────────────────────────────────
 function BlushPulseRing({ animate, delay = 0, size }: { animate: boolean; delay?: number; size: number }) {
   const scale   = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(0)).current;
@@ -106,20 +104,14 @@ function BlushPulseRing({ animate, delay = 0, size }: { animate: boolean; delay?
     <Animated.View
       pointerEvents="none"
       style={{
-        position:     'absolute',
-        width:        size,
-        height:       size,
-        borderRadius: size / 2,
-        borderWidth:  1.5,
-        borderColor:  C.blush,
-        transform:    [{ scale }],
-        opacity,
+        position: 'absolute', width: size, height: size, borderRadius: size / 2,
+        borderWidth: 1.5, borderColor: C.blush, transform: [{ scale }], opacity,
       }}
     />
   );
 }
 
-// ── ThinkingRing ──────────────────────────────────────────────────────────────
+// ── ThinkingRing ───────────────────────────────────────────────────────────────
 function ThinkingRing({ visible, size }: { visible: boolean; size: number }) {
   const rotation = useRef(new Animated.Value(0)).current;
   const opacity  = useRef(new Animated.Value(0)).current;
@@ -132,11 +124,8 @@ function ThinkingRing({ visible, size }: { visible: boolean; size: number }) {
       const spin = () => {
         if (!activeRef.current) return;
         rotation.setValue(0);
-        Animated.timing(rotation, {
-          toValue: 1, duration: 3000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        }).start(({ finished }) => { if (finished) spin(); });
+        Animated.timing(rotation, { toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: true })
+          .start(({ finished }) => { if (finished) spin(); });
       };
       spin();
     } else {
@@ -150,73 +139,206 @@ function ThinkingRing({ visible, size }: { visible: boolean; size: number }) {
   const r = size / 2 - 3;
 
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={{ position: 'absolute', width: size, height: size, transform: [{ rotate }], opacity }}
-    >
+    <Animated.View pointerEvents="none" style={{ position: 'absolute', width: size, height: size, transform: [{ rotate }], opacity }}>
       <Svg width={size} height={size}>
-        <Circle
-          cx={size / 2} cy={size / 2} r={r}
-          stroke={C.warm} strokeWidth={2}
-          strokeDasharray="10 7"
-          fill="none"
-        />
+        <Circle cx={size / 2} cy={size / 2} r={r} stroke={C.warm} strokeWidth={2} strokeDasharray="10 7" fill="none" />
       </Svg>
     </Animated.View>
   );
 }
 
-// ── MicIcon (SVG) ─────────────────────────────────────────────────────────────
+// ── MicIcon ───────────────────────────────────────────────────────────────────
 function MicIcon({ size = 44, color = '#FFFFFF' }: { size?: number; color?: string }) {
-  const s = size / 24;
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"
-        fill={color}
-      />
-      <Path
-        d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8"
-        stroke={color} strokeWidth={1.8} strokeLinecap="round" fill="none"
-      />
+      <Path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z" fill={color} />
+      <Path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v4M8 22h8" stroke={color} strokeWidth={1.8} strokeLinecap="round" fill="none" />
     </Svg>
   );
 }
 
-// ── CameraIcon (SVG) ──────────────────────────────────────────────────────────
+// ── CameraIcon ────────────────────────────────────────────────────────────────
 function CameraIcon({ size = 24, color = '#FFFFFF' }: { size?: number; color?: string }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M15 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z"
-        fill={color}
-      />
+      <Path d="M15 10.5V7a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1v-3.5l4 4v-11l-4 4z" fill={color} />
     </Svg>
+  );
+}
+
+// ── PersonAvatar ──────────────────────────────────────────────────────────────
+function PersonAvatar({
+  person,
+  onPress,
+  onLongPress,
+}: {
+  person: Person;
+  onPress: (p: Person) => void;
+  onLongPress: (p: Person) => void;
+}) {
+  const initials = person.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  return (
+    <TouchableOpacity
+      style={ps.avatarWrap}
+      onPress={() => onPress(person)}
+      onLongPress={() => onLongPress(person)}
+      delayLongPress={600}
+      activeOpacity={0.75}
+    >
+      <View style={ps.avatarCircle}>
+        {person.image_base64 ? (
+          <Image source={{ uri: toImgUri(person.image_base64) }} style={ps.avatarImg} />
+        ) : (
+          <Text style={ps.avatarInitials}>{initials}</Text>
+        )}
+      </View>
+      <Text style={ps.avatarName} numberOfLines={1}>{person.name.split(' ')[0]}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ── TypingDots ────────────────────────────────────────────────────────────────
+function TypingDots() {
+  const dots = [
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+    useRef(new Animated.Value(0)).current,
+  ];
+
+  useEffect(() => {
+    const anims = dots.map((dot, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 200),
+          Animated.timing(dot, { toValue: 1, duration: 300, useNativeDriver: true }),
+          Animated.timing(dot, { toValue: 0, duration: 300, useNativeDriver: true }),
+          Animated.delay((dots.length - i) * 200),
+        ])
+      )
+    );
+    anims.forEach((a) => a.start());
+    return () => anims.forEach((a) => a.stop());
+  }, []);
+
+  return (
+    <View style={{ flexDirection: 'row', marginTop: 14, gap: 6 }}>
+      {dots.map((dot, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 7, height: 7, borderRadius: 4,
+            backgroundColor: C.warm,
+            opacity: dot,
+            transform: [{ translateY: dot.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ── PersonModal ───────────────────────────────────────────────────────────────
+function PersonModal({ person, onClose }: { person: Person | null; onClose: () => void }) {
+  const [description, setDescription] = useState<string | null>(null);
+  const [loading,     setLoading]     = useState(false);
+
+  useEffect(() => {
+    if (!person) { setDescription(null); return; }
+    setLoading(true);
+    setDescription(null);
+    fetch(`${BACKEND_URL}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: USER_ID,
+        message: `In 2-3 warm, personal sentences remind me who ${person.name} is — they are my ${person.relationship}. Be specific, affectionate, and encouraging. No greetings, just the description.`,
+      }),
+    })
+      .then((r) => r.json())
+      .then((d) => setDescription(d.response ?? d.fallback_response ?? null))
+      .catch(() => setDescription(null))
+      .finally(() => setLoading(false));
+  }, [person?.id]);
+
+  if (!person) return null;
+  const initials = person.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase();
+  const imgUri = person.image_base64 ? toImgUri(person.image_base64) : null;
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={pm.backdrop}>
+        <TouchableOpacity style={pm.card} activeOpacity={1} onPress={() => {}}>
+          <TouchableOpacity style={pm.closeRow} onPress={onClose} activeOpacity={0.7}>
+            <Text style={pm.closeX}>✕</Text>
+          </TouchableOpacity>
+          <View style={pm.photoWrap}>
+            {imgUri ? (
+              <Image source={{ uri: imgUri }} style={pm.photo} />
+            ) : (
+              <View style={pm.photoPlaceholder}>
+                <Text style={pm.photoInitials}>{initials}</Text>
+              </View>
+            )}
+          </View>
+          <Text style={pm.name}>{person.name}</Text>
+          <Text style={pm.relationship}>{person.relationship}</Text>
+          {loading ? (
+            <TypingDots />
+          ) : description ? (
+            <Text style={pm.description}>{description}</Text>
+          ) : null}
+          {!person.image_base64 && (
+            <Text style={pm.hint}>Hold avatar to add a photo</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </Modal>
   );
 }
 
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [listening,     setListening]     = useState(false);
-  const [thinking,      setThinking]      = useState(false);
-  const [setupOpen,     setSetupOpen]     = useState(false);
-  const [cameraOpen,    setCameraOpen]    = useState(false);
-  const [processing,    setProcessing]    = useState(false);
-  const [capturedUri,   setCapturedUri]   = useState<string | null>(null);
-  const [permission,    requestPermission] = useCameraPermissions();
+  const [listening,      setListening]      = useState(false);
+  const [thinking,       setThinking]       = useState(false);
+  const [setupOpen,      setSetupOpen]      = useState(false);
+  const [cameraOpen,     setCameraOpen]     = useState(false);
+  const [processing,     setProcessing]     = useState(false);
+  const [capturedUri,    setCapturedUri]    = useState<string | null>(null);
+  const [people,         setPeople]         = useState<Person[]>([]);
+  const [photoTarget,    setPhotoTarget]    = useState<Person | null>(null);
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [reminders,      setReminders]      = useState<Reminder[]>(REMINDERS_PLACEHOLDER);
+  const [permission,     requestPermission] = useCameraPermissions();
 
   type Medication  = { name: string; dose: string; time: string };
   type Contact     = { name: string; relationship: string };
   type Appointment = { doctor: string; date: string };
-
-  const [patientName, setPatientName] = useState('');
-  const [medications, setMedications] = useState<Medication[]>([{ name: '', dose: '', time: '' }]);
-  const [contacts, setContacts] = useState<Contact[]>([{ name: '', relationship: '' }]);
+  const [patientName,  setPatientName]  = useState('');
+  const [medications,  setMedications]  = useState<Medication[]>([{ name: '', dose: '', time: '' }]);
+  const [contacts,     setContacts]     = useState<Contact[]>([{ name: '', relationship: '' }]);
   const [appointments, setAppointments] = useState<Appointment[]>([{ doctor: '', date: '' }]);
-  const [thinking, setThinking] = useState(false);
-  const [remindersOpen, setRemindersOpen] = useState(false);
-  const [reminders, setReminders] = useState<Reminder[]>(REMINDERS_PLACEHOLDER);
 
+  const recorder    = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+  const cameraRef   = useRef<CameraView>(null);
+  const buttonScale = useRef(new Animated.Value(1)).current;
+  const breathe     = useRef(new Animated.Value(1)).current;
+  const photoScale  = useRef(new Animated.Value(1)).current;
+  const photoOpacity = useRef(new Animated.Value(1)).current;
+
+  // ── People ───────────────────────────────────────────────────────────────
+  const fetchPeople = useCallback(async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/contacts?user_id=${USER_ID}`);
+      const data = await res.json();
+      if (data.contacts) setPeople(data.contacts);
+    } catch (e) {
+      console.warn('[PEOPLE] fetch failed:', e);
+    }
+  }, []);
+
+  useEffect(() => { fetchPeople(); }, [fetchPeople]);
+
+  // ── Reminders ────────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchReminders = async () => {
       try {
@@ -224,7 +346,11 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (data.reminders) {
-            setReminders(data.reminders);
+            const mapped = data.reminders.map((r: any) => ({
+              ...r,
+              type: ['medication', 'exercise', 'people', 'checkup'].includes(r.type) ? r.type : 'medication',
+            }));
+            setReminders(mapped);
           }
         }
       } catch (err) {
@@ -235,16 +361,17 @@ export default function App() {
     const interval = setInterval(fetchReminders, 10000);
     return () => clearInterval(interval);
   }, []);
-  const [cameraOpen, setCameraOpen] = useState(false);
-  const [processing, setProcessing] = useState(false);
-  const [capturedUri, setCapturedUri] = useState<string | null>(null);
-  const [permission, requestPermission] = useCameraPermissions();
-  const cameraRef = useRef<CameraView>(null);
-  const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const photoScale = useRef(new Animated.Value(1)).current;
-  const photoOpacity = useRef(new Animated.Value(1)).current;
 
-  // Idle breathing on inner circle
+  const openCameraForPerson = async (person: Person) => {
+    if (!permission?.granted) {
+      const result = await requestPermission();
+      if (!result.granted) return;
+    }
+    setPhotoTarget(person);
+    setCameraOpen(true);
+  };
+
+  // ── Idle breathing ───────────────────────────────────────────────────────
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -256,7 +383,7 @@ export default function App() {
     return () => loop.stop();
   }, []);
 
-  // ── Camera ──────────────────────────────────────────────────────────────────
+  // ── Camera ───────────────────────────────────────────────────────────────
   const openCamera = async () => {
     if (!permission?.granted) {
       const result = await requestPermission();
@@ -269,26 +396,37 @@ export default function App() {
     if (!cameraRef.current || processing) return;
     setProcessing(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.7 });
+      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.5 });
       setCameraOpen(false);
-      photoScale.setValue(1);
-      photoOpacity.setValue(0);
-      setCapturedUri(photo?.uri ?? null);
-      Animated.timing(photoOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => {
-        setTimeout(() => {
-          Animated.parallel([
-            Animated.timing(photoOpacity, { toValue: 0,      duration: 500, useNativeDriver: true }),
-            Animated.spring(photoScale,   { toValue: 1 / 10, useNativeDriver: true, speed: 3, bounciness: 0 }),
-          ]).start(() => setCapturedUri(null));
-        }, 2500);
-      });
-      Speech.speak('Let me take a look at that…');
-      const res  = await fetch(`${BACKEND_URL}/vision/image`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: USER_ID, image_base64: photo?.base64 }),
-      });
-      const data = await res.json();
-      Speech.speak(data.fallback_response ?? data.response ?? 'Sorry, I could not analyse that.');
+
+      if (photoTarget) {
+        const target = photoTarget;
+        setPhotoTarget(null);
+        await fetch(`${BACKEND_URL}/contacts/${target.id}/image`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: photo?.base64 }),
+        });
+        await fetchPeople();
+      } else {
+        photoScale.setValue(1);
+        photoOpacity.setValue(0);
+        setCapturedUri(photo?.uri ?? null);
+        Animated.timing(photoOpacity, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => {
+          setTimeout(() => {
+            Animated.parallel([
+              Animated.timing(photoOpacity, { toValue: 0,      duration: 500, useNativeDriver: true }),
+              Animated.spring(photoScale,   { toValue: 1 / 10, useNativeDriver: true, speed: 3, bounciness: 0 }),
+            ]).start(() => setCapturedUri(null));
+          }, 2500);
+        });
+        Speech.speak('Let me take a look at that…');
+        const res  = await fetch(`${BACKEND_URL}/vision/image`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: USER_ID, image_base64: photo?.base64 }),
+        });
+        const data = await res.json();
+        Speech.speak(data.fallback_response ?? data.response ?? 'Sorry, I could not analyse that.');
+      }
     } catch {
       Speech.speak('Sorry, I cannot connect. Please try again.');
     } finally {
@@ -296,7 +434,7 @@ export default function App() {
     }
   };
 
-  // ── Mic ─────────────────────────────────────────────────────────────────────
+  // ── Mic ──────────────────────────────────────────────────────────────────
   const onPressIn = async () => {
     setListening(true);
     Animated.spring(buttonScale, { toValue: 0.92, useNativeDriver: true, speed: 40, bounciness: 3 }).start();
@@ -322,7 +460,6 @@ export default function App() {
       setThinking(true);
       const response = await fetch(uri);
       const blob     = await response.blob();
-      console.log('[MIC] blob size:', blob.size, 'type:', blob.type);
       const mimeType = blob.type || 'audio/mp4';
       const base64   = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -342,8 +479,8 @@ export default function App() {
             { uri: `data:audio/mp3;base64,${data.audio_base64}` },
             { shouldPlay: true, volume: 1.0 }
           );
-          sound.setOnPlaybackStatusUpdate((s) => {
-            if (s.isLoaded && s.didJustFinish) sound.unloadAsync();
+          sound.setOnPlaybackStatusUpdate((st) => {
+            if (st.isLoaded && st.didJustFinish) sound.unloadAsync();
           });
         } else {
           const text = data.fallback_response ?? data.response;
@@ -360,7 +497,10 @@ export default function App() {
     }
   };
 
-  const next = reminders[0];
+  const OUTER    = 240;
+  const INNER    = 180;
+  const innerBg  = listening ? C.deep : C.warm;
+  const hintText = listening ? 'Listening…' : thinking ? 'Thinking…' : 'Hold to speak';
 
   return (
     <View style={s.screen}>
@@ -387,33 +527,38 @@ export default function App() {
         <Text style={s.greetText}>{getGreeting()}, Nikola</Text>
       </View>
 
-      {/* Hero — mic */}
+      {/* People */}
+      {people.length > 0 && (
+        <View style={s.peopleSection}>
+          <Text style={s.remindersLabel}>PEOPLE</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.peopleScroll}>
+            {people.map((person) => (
+              <PersonAvatar
+                key={person.id}
+                person={person}
+                onPress={setSelectedPerson}
+                onLongPress={openCameraForPerson}
+              />
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Mic hero */}
       <View style={s.hero}>
-        {/* Pulse rings (listening) */}
         <BlushPulseRing animate={listening} delay={0}   size={OUTER} />
         <BlushPulseRing animate={listening} delay={400} size={OUTER} />
         <BlushPulseRing animate={listening} delay={800} size={OUTER} />
-
-        {/* Thinking ring */}
         <ThinkingRing visible={thinking} size={OUTER + 20} />
 
-        {/* Outer blush ring */}
         <View style={[s.outerRing, { width: OUTER, height: OUTER, borderRadius: OUTER / 2 }]}>
-          {/* Inner warm circle */}
-          <Animated.View
-            style={{
-              transform: [{ scale: listening || thinking ? buttonScale : breathe }],
-            }}
-          >
+          <Animated.View style={{ transform: [{ scale: listening || thinking ? buttonScale : breathe }] }}>
             <TouchableOpacity
               activeOpacity={1}
               onPressIn={onPressIn}
               onPressOut={onPressOut}
               disabled={thinking}
-              style={[s.innerCircle, {
-                width: INNER, height: INNER, borderRadius: INNER / 2,
-                backgroundColor: innerBg,
-              }]}
+              style={[s.innerCircle, { width: INNER, height: INNER, borderRadius: INNER / 2, backgroundColor: innerBg }]}
             >
               <MicIcon size={46} color="#FFFFFF" />
               <Text style={s.holdText}>{hintText}</Text>
@@ -425,18 +570,11 @@ export default function App() {
       {/* Reminders */}
       <View style={s.remindersSection}>
         <Text style={s.remindersLabel}>REMINDERS</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={s.remindersScroll}
-        >
-          {REMINDERS_PLACEHOLDER.map((r) => {
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.remindersScroll}>
+          {reminders.map((r) => {
             const rs = REMINDER_STYLES[r.type];
             return (
-              <View
-                key={r.id}
-                style={[s.reminderBadge, { backgroundColor: rs.bg, borderColor: rs.border }]}
-              >
+              <View key={r.id} style={[s.reminderBadge, { backgroundColor: rs.bg, borderColor: rs.border }]}>
                 <Text style={[s.reminderBadgeLabel, { color: rs.text }]}>{r.label}</Text>
                 <Text style={[s.reminderBadgeTime,  { color: rs.text }]}>{r.time}</Text>
               </View>
@@ -453,12 +591,20 @@ export default function App() {
         <Text style={s.cameraTap}>tap · hold</Text>
       </View>
 
+      {/* Person detail modal */}
+      <PersonModal person={selectedPerson} onClose={() => setSelectedPerson(null)} />
+
       {/* Camera modal */}
-      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => { setCameraOpen(false); setPhotoTarget(null); }}>
         <View style={s.cameraScreen}>
           <CameraView ref={cameraRef} style={s.cameraPreview} facing="back" />
+          {photoTarget && (
+            <View style={s.cameraLabel}>
+              <Text style={s.cameraLabelText}>Photo for {photoTarget.name}</Text>
+            </View>
+          )}
           <View style={s.cameraControls}>
-            <TouchableOpacity style={s.closeBtn} onPress={() => setCameraOpen(false)}>
+            <TouchableOpacity style={s.closeBtn} onPress={() => { setCameraOpen(false); setPhotoTarget(null); }}>
               <Text style={s.closeBtnText}>✕</Text>
             </TouchableOpacity>
             <TouchableOpacity style={s.captureBtn} onPress={takePicture} disabled={processing}>
@@ -641,275 +787,3 @@ export default function App() {
     </View>
   );
 }
-
-// ── Styles ────────────────────────────────────────────────────────────────────
-const s = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: C.bg,
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingBottom: 36,
-    paddingTop: 60,
-  },
-
-  // Header
-  header: {
-    alignSelf: 'flex-start',
-    marginBottom: 8,
-  },
-  dateText: {
-    fontSize: 14,
-    color: C.textSec,
-    fontWeight: '400',
-    letterSpacing: 0.3,
-    marginBottom: 4,
-  },
-  greetText: {
-    fontSize: 28,
-    color: C.textPrimary,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-  },
-
-  // Share button
-  shareBtn: {
-    position: 'absolute',
-    top: 60,
-    right: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.borderDef,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 10,
-  },
-  shareBtnIcon: {
-    fontSize: 16,
-  },
-
-  // Hero
-  hero: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  outerRing: {
-    backgroundColor: C.blush,
-    borderWidth: 1.5,
-    borderColor: C.borderStr,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  innerCircle: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.deep,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
-    gap: 8,
-  },
-  holdText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '500',
-    letterSpacing: 0.3,
-    opacity: 0.9,
-  },
-
-  // Reminders
-  remindersSection: {
-    width: '100%',
-    marginBottom: 24,
-  },
-  remindersLabel: {
-    fontSize: 11,
-    color: C.textHint,
-    fontWeight: '600',
-    letterSpacing: 2.5,
-    textTransform: 'uppercase',
-    marginBottom: 12,
-  },
-  remindersScroll: {
-    gap: 10,
-    paddingRight: 4,
-  },
-  reminderBadge: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    minWidth: 80,
-    alignItems: 'center',
-  },
-  reminderBadgeLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  reminderBadgeTime: {
-    fontSize: 12,
-    fontWeight: '400',
-    opacity: 0.8,
-  },
-
-  // Camera
-  cameraSection: {
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  cameraCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: C.warm,
-    borderWidth: 1,
-    borderColor: C.borderStr,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.deep,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  cameraTap: {
-    marginTop: 6,
-    fontSize: 11,
-    color: C.textHint,
-    letterSpacing: 1,
-  },
-
-  // Camera modal
-  cameraScreen: {
-    flex: 1,
-    backgroundColor: '#000000',
-  },
-  cameraPreview: {
-    flex: 1,
-  },
-  cameraControls: {
-    position: 'absolute',
-    bottom: 48,
-    left: 0, right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 40,
-  },
-  closeBtn: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  closeBtnText: {
-    fontSize: 22, color: '#FFFFFF',
-  },
-  captureBtn: {
-    width: 80, height: 80, borderRadius: 40,
-    borderWidth: 3, borderColor: '#FFFFFF',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  captureInner: {
-    width: 62, height: 62, borderRadius: 31,
-    backgroundColor: '#FFFFFF',
-  },
-
-  // Photo overlay
-  photoOverlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  photoFrame: {
-    width: PHOTO_W, height: PHOTO_H,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: C.borderStr,
-    padding: 4,
-    backgroundColor: C.card,
-    shadowColor: C.deep,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 12,
-  },
-  photoImg: {
-    width: '100%', height: '100%', borderRadius: 16,
-  },
-
-  // Setup modal
-  setupScreen: {
-    flex: 1,
-    backgroundColor: C.bg,
-    paddingTop: 56,
-  },
-  setupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  setupTitle: {
-    fontSize: 24, fontWeight: '700', color: C.textPrimary,
-  },
-  setupCloseBtn: {
-    width: 40, height: 40, borderRadius: 20,
-    backgroundColor: C.card,
-    borderWidth: 1, borderColor: C.borderDef,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  setupCloseTxt: {
-    fontSize: 16, color: C.textSec,
-  },
-  setupScroll: {
-    flex: 1, paddingHorizontal: 20,
-  },
-  setupSection: {
-    fontSize: 14, fontWeight: '700', color: C.warm,
-    letterSpacing: 1, textTransform: 'uppercase',
-    marginTop: 24, marginBottom: 8,
-  },
-  setupInput: {
-    backgroundColor: C.card,
-    borderWidth: 1, borderColor: C.borderDef,
-    borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 12,
-    color: C.textPrimary, fontSize: 15,
-    marginBottom: 8,
-  },
-  setupRow: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: 8,
-  },
-  flex: {
-    flex: 1, marginRight: 8, marginBottom: 0,
-  },
-  setupSmall: {
-    width: 88, marginRight: 8, marginBottom: 0,
-  },
-  removeBtn: {
-    fontSize: 16, color: C.textHint, paddingHorizontal: 4,
-  },
-  addBtn: {
-    paddingVertical: 10, marginBottom: 4,
-  },
-  addBtnTxt: {
-    fontSize: 14, color: C.warm, fontWeight: '600',
-  },
-  saveBtn: {
-    marginTop: 32,
-    backgroundColor: C.warm,
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: 'center',
-  },
-  saveBtnTxt: {
-    fontSize: 17, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.3,
-  },
-});
