@@ -558,7 +558,7 @@ const s = StyleSheet.create({
 
   // Header
   header: {
-    alignSelf: 'flex-start',
+    alignItems: 'center',
     marginBottom: 8,
   },
   dateText: {
@@ -567,12 +567,14 @@ const s = StyleSheet.create({
     fontWeight: '400',
     letterSpacing: 0.3,
     marginBottom: 4,
+    textAlign: 'center',
   },
   greetText: {
     fontSize: 28,
     color: C.textPrimary,
     fontWeight: '700',
     letterSpacing: -0.5,
+    textAlign: 'center',
   },
 
   // Share button
@@ -629,6 +631,7 @@ const s = StyleSheet.create({
   remindersSection: {
     width: '100%',
     marginBottom: 24,
+    alignItems: 'center',
   },
   remindersLabel: {
     fontSize: 11,
@@ -637,6 +640,7 @@ const s = StyleSheet.create({
     letterSpacing: 2.5,
     textTransform: 'uppercase',
     marginBottom: 12,
+    textAlign: 'center',
   },
   remindersScroll: {
     gap: 10,
