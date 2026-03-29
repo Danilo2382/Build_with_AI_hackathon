@@ -250,7 +250,7 @@ function PersonModal({ person, onClose }: { person: Person | null; onClose: () =
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        user_id: USER_ID,
+        user_id: `${USER_ID}-describe-${person.id}`,
         message: `In 2-3 warm, personal sentences remind me who ${person.name} is — they are my ${person.relationship}. Be specific, affectionate, and encouraging. No greetings, just the description.`,
       }),
     })
@@ -435,15 +435,64 @@ export default function App() {
   };
 
   // ── Mic ──────────────────────────────────────────────────────────────────
+  const ws = useRef<WebSocket | null>(null);
+  const chunkInterval = useRef<NodeJS.Timeout | null>(null);
+  const offset = useRef(0);
+
   const onPressIn = async () => {
     setListening(true);
     Animated.spring(buttonScale, { toValue: 0.92, useNativeDriver: true, speed: 40, bounciness: 3 }).start();
     try {
       const { granted } = await requestRecordingPermissionsAsync();
       if (!granted) { Speech.speak('Microphone permission is required.'); return; }
+      
+      const wsUrl = BACKEND_URL.replace('http', 'ws').replace(':8080', ':8000') + `/chat/voice/stream?user_id=${USER_ID}`;
+      ws.current = new WebSocket(wsUrl);
+      
+      ws.current.onmessage = async (e) => {
+        try {
+          const audioStr = e.data instanceof Blob ? await new Promise<string>((res, rej) => {
+            const reader = new FileReader();
+            reader.onload = () => res((reader.result as string).split(',')[1]);
+            reader.onerror = rej;
+            reader.readAsDataURL(e.data);
+          }) : e.data;
+          
+          if (audioStr) {
+            const { sound } = await Audio.Sound.createAsync(
+              { uri: `data:audio/mp3;base64,${audioStr}` },
+              { shouldPlay: true, volume: 1.0 }
+            );
+            sound.setOnPlaybackStatusUpdate((st) => {
+              if (st.isLoaded && st.didJustFinish) sound.unloadAsync();
+            });
+          }
+        } catch (err) {
+          console.error("Audio playback error:", err);
+        }
+      };
+
       await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       recorder.record();
+      
+      offset.current = 0;
+      chunkInterval.current = setInterval(async () => {
+        const uri = recorder.uri;
+        if (!uri || !ws.current || ws.current.readyState !== WebSocket.OPEN) return;
+        try {
+          const response = await fetch(uri);
+          const blob = await response.blob();
+          if (blob.size > offset.current) {
+            const chunk = blob.slice(offset.current);
+            offset.current = blob.size;
+            ws.current.send(chunk);
+          }
+        } catch (err) {
+          // ignore fetch errors mid-recording
+        }
+      }, 500);
+
     } catch (e) {
       console.error('[MIC] onPressIn error:', e);
       Speech.speak('Could not start recording.');
@@ -454,45 +503,24 @@ export default function App() {
     setListening(false);
     Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 10 }).start();
     try {
-      await recorder.stop();
-      const uri = recorder.uri;
-      if (!uri) return;
-      setThinking(true);
-      const response = await fetch(uri);
-      const blob     = await response.blob();
-      const mimeType = blob.type || 'audio/mp4';
-      const base64   = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-        reader.onerror   = reject;
-        reader.readAsDataURL(blob);
-      });
-      try {
-        const res  = await fetch(`${BACKEND_URL}/chat/voice`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: USER_ID, audio_base64: base64, mime_type: mimeType }),
-        });
-        const data = await res.json();
-        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
-        if (data.audio_base64) {
-          const { sound } = await Audio.Sound.createAsync(
-            { uri: `data:audio/mp3;base64,${data.audio_base64}` },
-            { shouldPlay: true, volume: 1.0 }
-          );
-          sound.setOnPlaybackStatusUpdate((st) => {
-            if (st.isLoaded && st.didJustFinish) sound.unloadAsync();
-          });
-        } else {
-          const text = data.fallback_response ?? data.response;
-          if (text) Speech.speak(text);
-        }
-      } catch {
-        Speech.speak('Sorry, I cannot connect. Please try again.');
-      } finally {
-        setThinking(false);
+      if (chunkInterval.current) {
+        clearInterval(chunkInterval.current);
+        chunkInterval.current = null;
       }
+      await recorder.stop();
+      
+      const uri = recorder.uri;
+      if (uri && ws.current && ws.current.readyState === WebSocket.OPEN) {
+        const response = await fetch(uri);
+        const blob = await response.blob();
+        if (blob.size > offset.current) {
+            const chunk = blob.slice(offset.current);
+            ws.current.send(chunk);
+        }
+      }
+      
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
     } catch {
-      setThinking(false);
       Speech.speak('Sorry, something went wrong.');
     }
   };
