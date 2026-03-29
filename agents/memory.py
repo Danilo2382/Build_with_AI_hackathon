@@ -101,6 +101,11 @@ async def get_reminders(user_id: str) -> list[dict]:
     return [{"id": d.id, **d.to_dict()} for d in docs]
 
 
+async def update_reminder(user_id: str, reminder_id: str, updates: dict) -> None:
+    """Update a specific reminder (e.g., mark as confirmed)."""
+    await _get_db().collection("reminders").document(reminder_id).set(updates, merge=True)
+
+
 # ── News Preferences ────────────────────────────────────────────────────────
 
 async def get_news_preferences(user_id: str) -> dict:

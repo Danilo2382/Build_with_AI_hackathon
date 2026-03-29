@@ -109,6 +109,17 @@ You already know who the user is — never ask for their name or any identity in
 Use get_user_profile to personalise your greeting. Use get_current_datetime to be time-aware.
 Use get_todays_reminders or get_health_summary to answer overview questions.
 
+PROACTIVE SCHEDULE: If the user asks "What should I do?", "What's my schedule?", or anything about their day:
+1. Call get_todays_reminders immediately.
+2. Summarize the items they haven't confirmed yet (pending medications, exercise, or calls).
+3. Do not ask what they want to be reminded of—just tell them their schedule.
+
+ACTIONS: Your agents can record when things happen:
+- medication: can record when a pill was taken
+- exercise: can record when a session was completed
+- people: can record when contact was made with family
+Always delegate to the appropriate sub-agent when the user reports an action.
+
 EMERGENCY: This is a voice interface for an elderly user — transcription may be imperfect.
 Call call_for_help IMMEDIATELY, without asking for confirmation, passing the user's exact message as trigger_message, if the input contains ANY of:
 - Calls for help: "help", "please help", "somebody help", "anyone there", "help me"
@@ -119,12 +130,12 @@ Call call_for_help IMMEDIATELY, without asking for confirmation, passing the use
 When in doubt, send the alert. A false positive is far better than missing a real emergency.
 
 Delegate specialist requests immediately to the appropriate sub-agent:
-- medication: pills, doses, schedules, reminders
-- exercise: physical activity, stretching, movement
-- checkup: doctor appointments, medical exams, health checks
-- people: staying in touch with family and friends
+- medication: pills, history, confirm intake
+- exercise: activity, streaks, sessions
+- checkup: appointments
+- people: family and friends contact logs
 - vision: describing images or videos
-- news: current weather forecast and latest news headlines""",
+- news: latest news headlines""",
     tools=[get_user_profile, get_todays_reminders, get_current_datetime, get_health_summary, call_for_help],
     sub_agents=[medication_agent, exercise_agent, checkup_agent, people_agent, vision_agent, news_agent],
 )

@@ -370,6 +370,8 @@ export default function App() {
   const [actionReminder, setActionReminder] = useState<Reminder | null>(null);
   const [reminders,      setReminders]      = useState<Reminder[]>(REMINDERS_PLACEHOLDER);
   const [permission,     requestPermission] = useCameraPermissions();
+  const [speaking,       setSpeaking]       = useState(false);
+  const currentSound = useRef<Audio.Sound | null>(null);
 
   type Medication  = { name: string; dose: string; time: string };
   type Contact     = { name: string; relationship: string };
@@ -564,6 +566,20 @@ export default function App() {
     }
   };
 
+  const stopSpeaking = async () => {
+    try {
+      if (currentSound.current) {
+        await currentSound.current.stopAsync();
+        await currentSound.current.unloadAsync();
+        currentSound.current = null;
+      }
+      Speech.stop();
+      setSpeaking(false);
+    } catch (e) {
+      console.warn('[STOP] stopSpeaking error:', e);
+    }
+  };
+
   const onPressOut = async () => {
     setListening(false);
     Animated.spring(buttonScale, { toValue: 1, useNativeDriver: true, speed: 18, bounciness: 10 }).start();
@@ -589,16 +605,27 @@ export default function App() {
         const data = await res.json();
         await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
         if (data.audio_base64) {
+          stopSpeaking(); // Stop any previous speech
           const { sound } = await Audio.Sound.createAsync(
             { uri: `data:audio/mp3;base64,${data.audio_base64}` },
             { shouldPlay: true, volume: 1.0 }
           );
+          currentSound.current = sound;
+          setSpeaking(true);
           sound.setOnPlaybackStatusUpdate((st) => {
-            if (st.isLoaded && st.didJustFinish) sound.unloadAsync();
+            if (st.isLoaded && st.didJustFinish) {
+              sound.unloadAsync();
+              currentSound.current = null;
+              setSpeaking(false);
+            }
           });
         } else {
           const text = data.fallback_response ?? data.response;
-          if (text) Speech.speak(text);
+          if (text) {
+            stopSpeaking();
+            setSpeaking(true);
+            Speech.speak(text, { onDone: () => setSpeaking(false), onError: () => setSpeaking(false) });
+          }
         }
       } catch {
         Speech.speak('Sorry, I cannot connect. Please try again.');
@@ -681,6 +708,31 @@ export default function App() {
             </TouchableOpacity>
           </Animated.View>
         </View>
+
+        {speaking && (
+          <TouchableOpacity 
+            onPress={stopSpeaking}
+            activeOpacity={0.8}
+            style={{ 
+              marginTop: 24,
+              backgroundColor: '#FF3B30', 
+              paddingHorizontal: 20, 
+              paddingVertical: 12, 
+              borderRadius: 24, 
+              flexDirection: 'row',
+              alignItems: 'center',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.2,
+              shadowRadius: 8,
+              elevation: 4,
+              zIndex: 30
+            }}
+          >
+            <Text style={{ color: 'white', fontSize: 16, marginRight: 8, fontWeight: 'bold' }}>■</Text>
+            <Text style={{ color: 'white', fontWeight: '800', fontSize: 13, letterSpacing: 1 }}>STOP AGENT</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Reminders */}
