@@ -44,6 +44,13 @@ async def update_contact(user_id: str, contact_id: str, updates: dict) -> None:
     await _get_db().collection("contacts").document(contact_id).set(updates, merge=True)
 
 
+async def save_person_image(contact_id: str, image_base64: str) -> None:
+    """Save a photo for a contact (stored as base64 on the contact document)."""
+    await _get_db().collection("contacts").document(contact_id).set(
+        {"image_base64": image_base64}, merge=True
+    )
+
+
 # ── Exercise ───────────────────────────────────────────────────────────────
 
 async def get_exercise(user_id: str) -> dict:
