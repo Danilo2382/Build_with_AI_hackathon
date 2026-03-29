@@ -5,6 +5,7 @@ import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Easing,
   Image,
@@ -30,6 +31,7 @@ export type Reminder = {
   label: string;
   time: string;
   type: 'medication' | 'exercise' | 'people' | 'checkup';
+  status?: string;
 };
 
 export type Person = {
@@ -296,17 +298,76 @@ function PersonModal({ person, onClose }: { person: Person | null; onClose: () =
   );
 }
 
+// ── ReminderActionModal ───────────────────────────────────────────────────────
+function ReminderActionModal({
+  reminder,
+  onClose,
+  onConfirm,
+  onDelete,
+}: {
+  reminder: Reminder | null;
+  onClose: () => void;
+  onConfirm: (r: Reminder) => void;
+  onDelete: (r: Reminder) => void;
+}) {
+  if (!reminder) return null;
+  const isConfirmed = reminder.status === 'confirmed';
+
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <View style={pm.backdrop}>
+        <View style={pm.card}>
+          <TouchableOpacity style={pm.closeRow} onPress={onClose} activeOpacity={0.7}>
+            <Text style={pm.closeX}>✕</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 40, marginBottom: 16, textAlign: 'center' }}>{reminder.icon}</Text>
+          <Text style={{ fontSize: 24, fontWeight: '700', color: C.textPrimary, marginBottom: 8, textAlign: 'center' }}>{reminder.label}</Text>
+          <Text style={{ fontSize: 16, color: C.textSec, marginBottom: 32, textAlign: 'center' }}>Scheduled for {reminder.time}</Text>
+
+          <View style={{ width: '100%', gap: 12 }}>
+            <TouchableOpacity 
+              style={{ backgroundColor: isConfirmed ? C.borderDef : C.warm, paddingVertical: 16, borderRadius: 16, alignItems: 'center' }} 
+              disabled={isConfirmed}
+              onPress={() => { onConfirm(reminder); onClose(); }}
+            >
+              <Text style={{ color: isConfirmed ? C.textHint : '#FFFFFF', fontSize: 16, fontWeight: '700' }}>
+                {isConfirmed ? 'Already Confirmed' : 'Mark as Completed'}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={{ backgroundColor: '#FF3B30', paddingVertical: 16, borderRadius: 16, alignItems: 'center' }} 
+              onPress={() => { onDelete(reminder); onClose(); }}
+            >
+              <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '700' }}>Delete Reminder</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={{ paddingVertical: 16, alignItems: 'center' }} 
+              onPress={onClose}
+            >
+              <Text style={{ color: C.textSec, fontSize: 16, fontWeight: '600' }}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [listening,      setListening]      = useState(false);
   const [thinking,       setThinking]       = useState(false);
   const [setupOpen,      setSetupOpen]      = useState(false);
   const [cameraOpen,     setCameraOpen]     = useState(false);
+  const [cameraReady,    setCameraReady]    = useState(false);
   const [processing,     setProcessing]     = useState(false);
   const [capturedUri,    setCapturedUri]    = useState<string | null>(null);
   const [people,         setPeople]         = useState<Person[]>([]);
   const [photoTarget,    setPhotoTarget]    = useState<Person | null>(null);
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [actionReminder, setActionReminder] = useState<Reminder | null>(null);
   const [reminders,      setReminders]      = useState<Reminder[]>(REMINDERS_PLACEHOLDER);
   const [permission,     requestPermission] = useCameraPermissions();
 
@@ -350,7 +411,14 @@ export default function App() {
               ...r,
               type: ['medication', 'exercise', 'people', 'checkup'].includes(r.type) ? r.type : 'medication',
             }));
-            setReminders(mapped);
+            // Preserve locally confirmed statuses so polling doesn't overwrite them
+            setReminders(prev => {
+              const confirmedIds = new Set(prev.filter(p => p.status === 'confirmed').map(p => p.id));
+              return mapped.map((r: Reminder) => ({
+                ...r,
+                status: confirmedIds.has(r.id) ? 'confirmed' : (r.status ?? 'pending'),
+              }));
+            });
           }
         }
       } catch (err) {
@@ -375,8 +443,8 @@ export default function App() {
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(breathe, { toValue: 1.04, duration: 2200, useNativeDriver: true, easing: Easing.inOut(Easing.sine) }),
-        Animated.timing(breathe, { toValue: 1.00, duration: 2200, useNativeDriver: true, easing: Easing.inOut(Easing.sine) }),
+        Animated.timing(breathe, { toValue: 1.04, duration: 2200, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
+        Animated.timing(breathe, { toValue: 1.00, duration: 2200, useNativeDriver: true, easing: Easing.inOut(Easing.ease) }),
       ])
     );
     loop.start();
@@ -384,6 +452,48 @@ export default function App() {
   }, []);
 
   // ── Camera ───────────────────────────────────────────────────────────────
+  const confirmReminder = async (r: Reminder) => {
+    if (r.status === 'confirmed') return;
+    
+    // Optimistically mark as confirmed (green)
+    setReminders(prev => prev.map(p => p.id === r.id ? { ...p, status: 'confirmed' } : p));
+    Speech.speak('Confirming ' + r.label + '...');
+    try {
+      const res = await fetch(`${BACKEND_URL}/reminders/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: USER_ID, reminder_id: r.id })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        Speech.speak(data.response || 'Done');
+      } else {
+        Speech.speak('Failed to confirm. I will put it back.');
+        setReminders(prev => prev.map(p => p.id === r.id ? { ...p, status: 'pending' } : p));
+      }
+    } catch {
+      Speech.speak('Connection failed. Try again.');
+      setReminders(prev => prev.map(p => p.id === r.id ? { ...p, status: 'pending' } : p));
+    }
+  };
+
+  const deleteReminder = async (r: Reminder) => {
+    setReminders(prev => prev.filter(p => p.id !== r.id));
+    Speech.speak('Reminder deleted.');
+    try {
+      const res = await fetch(`${BACKEND_URL}/reminders/${r.id}?user_id=${USER_ID}`, {
+        method: 'DELETE'
+      });
+      if (!res.ok) {
+        Speech.speak('Failed to delete. It has been restored.');
+        setReminders(prev => [...prev, r]);
+      }
+    } catch {
+      Speech.speak('Connection failed. Could not delete.');
+      setReminders(prev => [...prev, r]);
+    }
+  };
+
   const openCamera = async () => {
     if (!permission?.granted) {
       const result = await requestPermission();
@@ -393,11 +503,12 @@ export default function App() {
   };
 
   const takePicture = async () => {
-    if (!cameraRef.current || processing) return;
+    if (!cameraRef.current || processing || !cameraReady) return;
     setProcessing(true);
     try {
-      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.5 });
+      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.3 });
       setCameraOpen(false);
+      setCameraReady(false);
 
       if (photoTarget) {
         const target = photoTarget;
@@ -420,15 +531,18 @@ export default function App() {
           }, 2500);
         });
         Speech.speak('Let me take a look at that…');
-        const res  = await fetch(`${BACKEND_URL}/vision/image`, {
+        const res  = await fetch(`${BACKEND_URL}/vision`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: USER_ID, image_base64: photo?.base64 }),
         });
         const data = await res.json();
         Speech.speak(data.fallback_response ?? data.response ?? 'Sorry, I could not analyse that.');
       }
-    } catch {
+    } catch (e: any) {
       Speech.speak('Sorry, I cannot connect. Please try again.');
+      Alert.alert('Camera Error', String(e?.message || e));
+      setCameraOpen(false);
+      setCameraReady(false);
     } finally {
       setProcessing(false);
     }
@@ -502,6 +616,8 @@ export default function App() {
   const innerBg  = listening ? C.deep : C.warm;
   const hintText = listening ? 'Listening…' : thinking ? 'Thinking…' : 'Hold to speak';
 
+
+
   return (
     <View style={s.screen}>
       <StatusBar style="dark" />
@@ -572,12 +688,15 @@ export default function App() {
         <Text style={s.remindersLabel}>REMINDERS</Text>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.remindersScroll}>
           {reminders.map((r) => {
-            const rs = REMINDER_STYLES[r.type];
+            let rs = REMINDER_STYLES[r.type];
+            if (r.status === 'confirmed') {
+              rs = { bg: '#D4EcdA', border: '#A3C8AB', text: '#2C5035' }; // Green
+            }
             return (
-              <View key={r.id} style={[s.reminderBadge, { backgroundColor: rs.bg, borderColor: rs.border }]}>
+              <TouchableOpacity key={r.id} onPress={() => setActionReminder(r)} activeOpacity={0.7} style={[s.reminderBadge, { backgroundColor: rs.bg, borderColor: rs.border }]}>
                 <Text style={[s.reminderBadgeLabel, { color: rs.text }]}>{r.label}</Text>
                 <Text style={[s.reminderBadgeTime,  { color: rs.text }]}>{r.time}</Text>
-              </View>
+              </TouchableOpacity>
             );
           })}
         </ScrollView>
@@ -594,20 +713,28 @@ export default function App() {
       {/* Person detail modal */}
       <PersonModal person={selectedPerson} onClose={() => setSelectedPerson(null)} />
 
+      {/* Reminder action modal */}
+      <ReminderActionModal 
+        reminder={actionReminder} 
+        onClose={() => setActionReminder(null)} 
+        onConfirm={confirmReminder} 
+        onDelete={deleteReminder} 
+      />
+
       {/* Camera modal */}
-      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => { setCameraOpen(false); setPhotoTarget(null); }}>
+      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => { setCameraOpen(false); setCameraReady(false); setPhotoTarget(null); }}>
         <View style={s.cameraScreen}>
-          <CameraView ref={cameraRef} style={s.cameraPreview} facing="back" />
+          <CameraView ref={cameraRef} style={s.cameraPreview} facing="back" onCameraReady={() => setCameraReady(true)} />
           {photoTarget && (
             <View style={s.cameraLabel}>
               <Text style={s.cameraLabelText}>Photo for {photoTarget.name}</Text>
             </View>
           )}
           <View style={s.cameraControls}>
-            <TouchableOpacity style={s.closeBtn} onPress={() => { setCameraOpen(false); setPhotoTarget(null); }}>
+            <TouchableOpacity style={s.closeBtn} onPress={() => { setCameraOpen(false); setCameraReady(false); setPhotoTarget(null); }}>
               <Text style={s.closeBtnText}>✕</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={s.captureBtn} onPress={takePicture} disabled={processing}>
+            <TouchableOpacity style={[s.captureBtn, { opacity: (!cameraReady || processing) ? 0.5 : 1 }]} onPress={takePicture} disabled={!cameraReady || processing}>
               <View style={s.captureInner} />
             </TouchableOpacity>
             <View style={{ width: 56 }} />
@@ -693,87 +820,7 @@ export default function App() {
         </View>
       </Modal>
 
-      <View style={styles.heroArea}>
-        {/* micWrapper is 320x320 — rings expand inside here, text is outside */}
-        <View style={styles.micWrapper}>
-          <Animated.View style={[styles.glow, { opacity: glowOpacity }]} />
-          <PulseRing animate={listening || thinking} delay={0} />
-          <PulseRing animate={listening || thinking} delay={450} />
-          <PulseRing animate={listening || thinking} delay={900} />
-
-          <Animated.View style={{ transform: [{ scale: listening ? buttonScale : breathe }] }}>
-            <TouchableOpacity
-              style={[styles.micButton, listening && styles.micButtonActive]}
-              onPressIn={onPressIn}
-              onPressOut={onPressOut}
-              activeOpacity={1}
-              disabled={thinking}
-            >
-              <Text style={styles.micIcon}>🎙️</Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-          <RotatingRing listening={listening} />
-        </View>
-
-        <Animated.Text style={[styles.micHint, (listening || thinking) && styles.micHintActive, { opacity: hintOpacity }]}>
-          {listening ? 'Listening…' : thinking ? 'Thinking…' : 'Hold to speak'}
-        </Animated.Text>
-      </View>
-
-      {/* Camera */}
-      <TouchableOpacity style={styles.cameraButton} activeOpacity={0.7} onPress={openCamera}>
-        <Text style={styles.cameraIcon}>📷</Text>
-        <Text style={styles.cameraLabel}>Camera</Text>
-      </TouchableOpacity>
-
-      {/* Camera modal */}
-      <Modal visible={cameraOpen} animationType="slide" onRequestClose={() => setCameraOpen(false)}>
-        <View style={styles.cameraScreen}>
-          <CameraView ref={cameraRef} style={styles.cameraPreview} facing="back" />
-          <View style={styles.cameraControls}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => setCameraOpen(false)}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.captureButton} onPress={takePicture} disabled={processing}>
-              <View style={styles.captureInner} />
-            </TouchableOpacity>
-            <View style={{ width: 56 }} />
-          </View>
-        </View>
-      </Modal>
-
-      {/* Reminders */}
-      {next && (
-      <View style={styles.remindersArea}>
-        <TouchableOpacity
-          style={styles.reminderPill}
-          onPress={() => setRemindersOpen((v) => !v)}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.reminderPillIcon}>{next.icon}</Text>
-          <Text style={styles.reminderPillText}>{next.label}</Text>
-          <Text style={styles.reminderPillTime}>{next.time}</Text>
-          <Text style={[styles.reminderChevron, remindersOpen && styles.reminderChevronOpen]}>
-            {remindersOpen ? '▲' : '▼'}
-          </Text>
-        </TouchableOpacity>
-
-        {remindersOpen && (
-          <ScrollView style={styles.remindersDropdown} showsVerticalScrollIndicator={false}>
-            {reminders.slice(1).map((r) => (
-              <TouchableOpacity key={r.id} style={styles.reminderRow}>
-                <Text style={styles.reminderRowIcon}>{r.icon}</Text>
-                <Text style={styles.reminderRowLabel}>{r.label}</Text>
-                <Text style={styles.reminderRowTime}>{r.time}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        )}
-      </View>
-      )}
-
-      {/* Photo shrink animation overlay */}
+      {/* Photo overlay */}
       {capturedUri && (
         <Animated.View
           pointerEvents="none"

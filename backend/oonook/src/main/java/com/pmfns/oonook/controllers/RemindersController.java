@@ -40,4 +40,18 @@ public class RemindersController {
                     }
                 });
     }
+
+    @DeleteMapping("/{reminderId}")
+    public Mono<ResponseEntity<Map<String, Object>>> deleteReminder(
+            @PathVariable String reminderId,
+            @RequestParam("user_id") String userId) {
+        return remindersService.deleteReminder(userId, reminderId)
+                .map(deleted -> {
+                    if (deleted) {
+                        return ResponseEntity.ok(Map.of("deleted", true));
+                    } else {
+                        return ResponseEntity.status(404).body(Map.of("deleted", false));
+                    }
+                });
+    }
 }

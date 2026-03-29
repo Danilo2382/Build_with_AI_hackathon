@@ -17,7 +17,19 @@ public class RemindersServiceImpl implements RemindersService {
 
     @Override
     public Mono<List<Reminder>> getReminders(String userId) {
-        return reminderRepository.findAllByUserId(userId).collectList();
+        return reminderRepository.findAllByUserId(userId)
+                .collectList()
+                .map(list -> {
+                    list.sort((a, b) -> {
+                        boolean aConfirmed = "confirmed".equals(a.getStatus());
+                        boolean bConfirmed = "confirmed".equals(b.getStatus());
+                        if (aConfirmed != bConfirmed) return aConfirmed ? 1 : -1;
+                        String aTime = a.getTime() != null ? a.getTime() : "";
+                        String bTime = b.getTime() != null ? b.getTime() : "";
+                        return aTime.compareTo(bTime);
+                    });
+                    return list;
+                });
     }
 
     @Override
@@ -27,6 +39,18 @@ public class RemindersServiceImpl implements RemindersService {
                     if (userId.equals(reminder.getUserId())) {
                         reminder.setStatus("confirmed");
                         return reminderRepository.save(reminder).thenReturn(true);
+                    }
+                    return Mono.just(false);
+                })
+                .defaultIfEmpty(false);
+    }
+
+    @Override
+    public Mono<Boolean> deleteReminder(String userId, String reminderId) {
+        return reminderRepository.findById(reminderId)
+                .flatMap(reminder -> {
+                    if (userId.equals(reminder.getUserId())) {
+                        return reminderRepository.delete(reminder).thenReturn(true);
                     }
                     return Mono.just(false);
                 })

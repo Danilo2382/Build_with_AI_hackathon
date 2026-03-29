@@ -21,7 +21,14 @@ public class ContactsController {
     public Mono<ResponseEntity<Map<String, List<Contact>>>> getContacts(@RequestParam("user_id") String userId) {
         return contactRepository.findAllByUserId(userId)
                 .collectList()
-                .map(contacts -> ResponseEntity.ok(Map.of("contacts", contacts)));
+                .map(contacts -> {
+                    contacts.sort((a, b) -> {
+                        String nameA = a.getName() != null ? a.getName() : "";
+                        String nameB = b.getName() != null ? b.getName() : "";
+                        return nameA.compareToIgnoreCase(nameB);
+                    });
+                    return ResponseEntity.ok(Map.of("contacts", contacts));
+                });
     }
 
     @PostMapping("/{contactId}/image")

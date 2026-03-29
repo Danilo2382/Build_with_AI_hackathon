@@ -31,8 +31,13 @@ def _get_model() -> GenerativeModel:
 
 
 def _decode(data_uri: str) -> tuple[bytes, str]:
-    header, encoded = data_uri.split(",", 1)
-    mime = header.split(":")[1].split(";")[0]
+    if "," in data_uri:
+        header, encoded = data_uri.split(",", 1)
+        mime = header.split(":")[1].split(";")[0]
+    else:
+        # Raw base64 without data URI prefix
+        encoded = data_uri
+        mime = "image/jpeg"
     return base64.b64decode(encoded), mime
 
 

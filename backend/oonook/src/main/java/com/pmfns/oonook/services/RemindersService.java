@@ -7,4 +7,5 @@ import java.util.List;
 public interface RemindersService {
     Mono<List<Reminder>> getReminders(String userId);
     Mono<Boolean> confirmReminder(String userId, String reminderId);
+    Mono<Boolean> deleteReminder(String userId, String reminderId);
 }
