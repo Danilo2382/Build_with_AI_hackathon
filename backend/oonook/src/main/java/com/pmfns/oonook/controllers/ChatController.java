@@ -2,6 +2,7 @@ package com.pmfns.oonook.controllers;
 
 import com.pmfns.oonook.models.ChatRequest;
 import com.pmfns.oonook.models.ChatResponse;
+import com.pmfns.oonook.models.VoiceChatRequest;
 import com.pmfns.oonook.services.AgentsService;
 
 import lombok.RequiredArgsConstructor;
@@ -22,5 +23,10 @@ public class ChatController {
     @PostMapping
     public ResponseEntity<ChatResponse> chat(@RequestBody ChatRequest request) {
         return agentsService.forwardChat(request);
+    }
+
+    @PostMapping("/voice")
+    public ResponseEntity<ChatResponse> voiceChat(@RequestBody VoiceChatRequest request) {
+        return agentsService.forwardVoiceChat(request);
     }
 }
