@@ -4,6 +4,7 @@ import com.pmfns.oonook.models.ChatRequest;
 import com.pmfns.oonook.models.ChatResponse;
 import com.pmfns.oonook.models.VideoRequest;
 import com.pmfns.oonook.models.VisionRequest;
+import com.pmfns.oonook.models.VoiceChatRequest;
 
 import java.util.Map;
 
@@ -39,6 +40,19 @@ public class AgentsService {
         if (request.audioBase64() != null) body.put("audio_base64", request.audioBase64());
         return restClient.post()
                 .uri("/chat")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body)
+                .retrieve()
+                .toEntity(ChatResponse.class);
+    }
+
+    public ResponseEntity<ChatResponse> forwardVoiceChat(VoiceChatRequest request) {
+        Map<String, Object> body = new java.util.HashMap<>();
+        body.put("user_id", request.userId());
+        body.put("audio_base64", request.audioBase64());
+        if (request.mimeType() != null) body.put("mime_type", request.mimeType());
+        return restClient.post()
+                .uri("/chat/voice")
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(body)
                 .retrieve()

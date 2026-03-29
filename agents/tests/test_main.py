@@ -1,11 +1,29 @@
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from httpx import ASGITransport, AsyncClient
-from unittest.mock import AsyncMock, patch
 
 from models import AgentResponse, MediaItem
 
 
-def _agent_resp(agent: str = "checkup", media=None) -> AgentResponse:
+def _make_event(text: str):
+    """Build a mock ADK final response event."""
+    part = MagicMock()
+    part.text = text
+    content = MagicMock()
+    content.parts = [part]
+    event = MagicMock()
+    event.is_final_response.return_value = True
+    event.content = content
+    return event
+
+
+async def _aiter(*items):
+    for item in items:
+        yield item
+
+
+def _agent_resp(agent: str = "oonook", media=None) -> AgentResponse:
     return AgentResponse(response="Test response", agent=agent, media=media)
 
 
@@ -25,23 +43,29 @@ async def test_health(app):
 
 @pytest.mark.asyncio
 async def test_chat_returns_agent_response(app):
-    with patch("main.route", new_callable=AsyncMock, return_value=_agent_resp("medication")):
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.post("/chat", json={"user_id": "u1", "message": "When do I take aspirin?"})
+    event = _make_event("You take Aspirin at 8am.")
+    with patch("main._runner.run_async", return_value=_aiter(event)):
+        with patch("main._get_or_create_session", new_callable=AsyncMock, return_value="session-u1"):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+                resp = await client.post("/chat", json={"user_id": "u1", "message": "When do I take aspirin?"})
     assert resp.status_code == 200
-    assert resp.json()["agent"] == "medication"
+    assert resp.json()["response"] == "You take Aspirin at 8am."
+    assert resp.json()["agent"] == "oonook"
 
 
 @pytest.mark.asyncio
 async def test_chat_error_returns_fallback(app):
-    with patch("main.route", new_callable=AsyncMock, side_effect=RuntimeError("boom")):
-        # raise_app_exceptions=False: Starlette sends the fallback response then re-raises;
-        # httpx must not propagate the re-raise so we can inspect the response.
-        async with AsyncClient(
-            transport=ASGITransport(app=app, raise_app_exceptions=False),
-            base_url="http://test",
-        ) as client:
-            resp = await client.post("/chat", json={"user_id": "u1", "message": "hello"})
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+        yield  # make it an async generator
+
+    with patch("main._runner.run_async", side_effect=RuntimeError("boom")):
+        with patch("main._get_or_create_session", new_callable=AsyncMock, return_value="session-u1"):
+            async with AsyncClient(
+                transport=ASGITransport(app=app, raise_app_exceptions=False),
+                base_url="http://test",
+            ) as client:
+                resp = await client.post("/chat", json={"user_id": "u1", "message": "hello"})
     assert resp.status_code == 200
     assert "fallback_response" in resp.json()
 

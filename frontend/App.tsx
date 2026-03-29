@@ -1,4 +1,5 @@
-import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync } from 'expo-audio';
+import { useAudioRecorder, RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync } from 'expo-audio';
+import { Audio } from 'expo-av';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Speech from 'expo-speech';
 import { StatusBar } from 'expo-status-bar';
@@ -24,7 +25,7 @@ const PHOTO_H = SCREEN_H * 0.35;
 import Svg, { Path } from 'react-native-svg';
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8080';
-const USER_ID = 'demo_user';
+const USER_ID = 'nikola';
 const BOT_USERNAME = 'Oonook_Hackathon_Bot';
 
 type Reminder = { id: string; icon: string; label: string; time: string };
@@ -232,7 +233,7 @@ export default function App() {
       Speech.speak('Let me take a look at that…');
       console.log('[CAM] base64 length:', photo?.base64?.length);
       console.log('[CAM] posting to backend...');
-      const res = await fetch(`${BACKEND_URL}/vision`, {
+      const res = await fetch(`${BACKEND_URL}/vision/image`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: USER_ID, image_base64: photo?.base64 }),
@@ -280,6 +281,7 @@ export default function App() {
       const { granted } = await requestRecordingPermissionsAsync();
       console.log('[MIC] permission granted:', granted);
       if (!granted) { Speech.speak('Microphone permission is required.'); return; }
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
       await recorder.prepareToRecordAsync();
       console.log('[MIC] prepared, starting record');
       recorder.record();
@@ -314,13 +316,14 @@ export default function App() {
         Animated.timing(hintOpacity, { toValue: 0, duration: 150, useNativeDriver: true }),
         Animated.timing(hintOpacity, { toValue: 1, duration: 150, useNativeDriver: true }),
       ]).start();
-      Speech.speak('Let me think about that…');
+      // thinking indicator — audio response replaces spoken feedback
 
       console.log('[MIC] fetching audio file...');
       const response = await fetch(uri);
       console.log('[MIC] fetch status:', response.status);
       const blob = await response.blob();
-      console.log('[MIC] blob size:', blob.size);
+      console.log('[MIC] blob size:', blob.size, 'type:', blob.type);
+      const mimeType = blob.type || 'audio/mp4';
       const base64 = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => {
@@ -334,16 +337,27 @@ export default function App() {
 
       try {
         console.log('[MIC] posting to backend...');
-        const res = await fetch(`${BACKEND_URL}/chat`, {
+        const res = await fetch(`${BACKEND_URL}/chat/voice`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: USER_ID, audio_base64: base64 }),
+          body: JSON.stringify({ user_id: USER_ID, audio_base64: base64, mime_type: mimeType }),
         });
         console.log('[MIC] backend status:', res.status);
         const data = await res.json();
         console.log('[MIC] backend response:', data);
-        const text = data.fallback_response ?? data.response;
-        if (text) Speech.speak(text);
+        await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
+        if (data.audio_base64) {
+          const { sound } = await Audio.Sound.createAsync(
+            { uri: `data:audio/mp3;base64,${data.audio_base64}` },
+            { shouldPlay: true, volume: 1.0 }
+          );
+          sound.setOnPlaybackStatusUpdate((status) => {
+            if (status.isLoaded && status.didJustFinish) sound.unloadAsync();
+          });
+        } else {
+          const text = data.fallback_response ?? data.response;
+          if (text) Speech.speak(text);
+        }
       } catch (e) {
         console.error('[MIC] backend error:', e);
         Speech.speak('Sorry, I cannot connect. Please try again.');

@@ -28,6 +28,7 @@ class AgentResponse(BaseModel):
     response: str
     agent: str
     media: Optional[MediaItem] = None
+    audio_base64: Optional[str] = None
 
 
 class GenerateRemindersRequest(BaseModel):
@@ -37,6 +38,12 @@ class GenerateRemindersRequest(BaseModel):
 class VoiceReminderRequest(BaseModel):
     user_id: str
     message: str
+
+
+class VoiceChatRequest(BaseModel):
+    user_id: str
+    audio_base64: str
+    mime_type: Optional[str] = "audio/mp4"
 
 
 class ErrorResponse(BaseModel):
