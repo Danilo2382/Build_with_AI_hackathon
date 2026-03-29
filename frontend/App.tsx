@@ -463,7 +463,28 @@ export default function App() {
             </TouchableOpacity>
 
             {/* Save */}
-            <TouchableOpacity style={styles.setupSaveBtn} onPress={() => setSetupOpen(false)}>
+            <TouchableOpacity style={styles.setupSaveBtn} onPress={async () => {
+              const payload = {
+                userId: USER_ID,
+                patientName,
+                medications: medications.filter(m => m.name.trim()),
+                contacts: contacts.filter(c => c.name.trim()),
+                appointments: appointments.filter(a => a.doctor.trim()),
+              };
+              console.log('[Setup] posting to', `${BACKEND_URL}/setup`, payload);
+              try {
+                const res = await fetch(`${BACKEND_URL}/setup`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                console.log('[Setup] response:', data);
+              } catch (e) {
+                console.error('[Setup] error:', e);
+              }
+              setSetupOpen(false);
+            }}>
               <Text style={styles.setupSaveText}>Save & Close</Text>
             </TouchableOpacity>
 

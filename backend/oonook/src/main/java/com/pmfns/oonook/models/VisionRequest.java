@@ -1,4 +1,9 @@
 package com.pmfns.oonook.models;
 
-public record VisionRequest(String userId, String imageBase64, String prompt) {
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+public record VisionRequest(
+        @JsonProperty("user_id") String userId,
+        @JsonProperty("image_base64") String imageBase64,
+        String prompt) {
 }

@@ -1,4 +1,8 @@
 package com.pmfns.oonook.models;
 
-public record ChatRequest(String userId, String audioBase64) {
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+public record ChatRequest(
+        @JsonProperty("user_id") String userId,
+        @JsonProperty("audio_base64") String audioBase64) {
 }

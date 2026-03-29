@@ -1,8 +1,10 @@
+import base64
 import logging
 
 import config  # noqa: F401 — ensures vertexai.init() is called
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from vertexai.generative_models import GenerativeModel, Part
 
 from adk.reminders.agent import run as run_reminders, run_voice as run_voice_reminder
 from adk.vision.agent import run_image, run_video
@@ -30,7 +32,17 @@ async def health() -> dict:
 
 @app.post("/chat", response_model=AgentResponse)
 async def chat(body: ChatRequest) -> AgentResponse:
-    return await route(body.user_id, body.message)
+    audio_bytes = base64.b64decode(body.audio_base64)
+    audio_part = Part.from_data(data=audio_bytes, mime_type="audio/mp4")
+    # Use SMART_MODEL for STT — gemini-2.5-flash-lite does not support audio input
+    stt_model = GenerativeModel(model_name=config.SMART_MODEL)
+    stt_response = await stt_model.generate_content_async(
+        [audio_part, "Transcribe exactly what the user said. Output only the transcription, nothing else."]
+    )
+    message = stt_response.text.strip()
+    logger.info("[chat] transcribed: %s", message)
+    print(f"[chat] transcribed: {message!r}", flush=True)
+    return await route(body.user_id, message)
 
 
 @app.post("/reminders/generate")
