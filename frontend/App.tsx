@@ -24,7 +24,7 @@ const PHOTO_W = SCREEN_W * 0.55;
 const PHOTO_H = SCREEN_H * 0.35;
 import Svg, { Path } from 'react-native-svg';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://localhost:8080';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL ?? 'http://10.157.195.91:8080';
 const USER_ID = 'nikola';
 const BOT_USERNAME = 'Oonook_Hackathon_Bot';
 
@@ -187,6 +187,26 @@ export default function App() {
   const [appointments, setAppointments] = useState<Appointment[]>([{ doctor: '', date: '' }]);
   const [thinking, setThinking] = useState(false);
   const [remindersOpen, setRemindersOpen] = useState(false);
+  const [reminders, setReminders] = useState<Reminder[]>(REMINDERS_PLACEHOLDER);
+
+  useEffect(() => {
+    const fetchReminders = async () => {
+      try {
+        const res = await fetch(`${BACKEND_URL}/reminders?user_id=${USER_ID}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.reminders) {
+            setReminders(data.reminders);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch reminders:', err);
+      }
+    };
+    fetchReminders();
+    const interval = setInterval(fetchReminders, 10000);
+    return () => clearInterval(interval);
+  }, []);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
@@ -374,7 +394,7 @@ export default function App() {
     }
   };
 
-  const next = REMINDERS_PLACEHOLDER[0];
+  const next = reminders[0];
 
   return (
     <View style={styles.screen}>
@@ -537,6 +557,7 @@ export default function App() {
       </Modal>
 
       {/* Reminders */}
+      {next && (
       <View style={styles.remindersArea}>
         <TouchableOpacity
           style={styles.reminderPill}
@@ -553,7 +574,7 @@ export default function App() {
 
         {remindersOpen && (
           <ScrollView style={styles.remindersDropdown} showsVerticalScrollIndicator={false}>
-            {REMINDERS_PLACEHOLDER.slice(1).map((r) => (
+            {reminders.slice(1).map((r) => (
               <TouchableOpacity key={r.id} style={styles.reminderRow}>
                 <Text style={styles.reminderRowIcon}>{r.icon}</Text>
                 <Text style={styles.reminderRowLabel}>{r.label}</Text>
@@ -563,6 +584,7 @@ export default function App() {
           </ScrollView>
         )}
       </View>
+      )}
 
       {/* Photo shrink animation overlay */}
       {capturedUri && (
