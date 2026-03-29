@@ -745,6 +745,13 @@ export default function App() {
         )}
       </View>
 
+      {/* Camera button */}
+      <View style={s.cameraSection}>
+        <TouchableOpacity style={s.cameraCircle} onPress={openCamera} activeOpacity={0.75}>
+          <CameraIcon size={22} color="#FFFFFF" />
+        </TouchableOpacity>
+      </View>
+
       {/* Reminders */}
       <View style={s.remindersSection}>
         <Text style={s.remindersLabel}>REMINDERS</Text>
@@ -762,14 +769,6 @@ export default function App() {
             );
           })}
         </ScrollView>
-      </View>
-
-      {/* Camera button */}
-      <View style={s.cameraSection}>
-        <TouchableOpacity style={s.cameraCircle} onPress={openCamera} activeOpacity={0.75}>
-          <CameraIcon size={22} color="#FFFFFF" />
-        </TouchableOpacity>
-        <Text style={s.cameraTap}>tap · hold</Text>
       </View>
 
       {/* Person detail modal */}

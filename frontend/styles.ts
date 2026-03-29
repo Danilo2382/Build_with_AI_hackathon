@@ -151,7 +151,7 @@ export const s = StyleSheet.create({
   // Camera button
   cameraSection: {
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 4+10,
   },
   cameraCircle: {
     width: 52,
