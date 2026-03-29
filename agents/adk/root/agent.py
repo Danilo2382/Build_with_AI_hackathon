@@ -100,6 +100,17 @@ async def get_health_summary() -> dict:
     }
 
 
+async def confirm_my_reminder(reminder_id: str) -> str:
+    """Mark a specific reminder as 'confirmed' (completed) by its ID.
+    
+    Args:
+        reminder_id: The unique ID of the reminder to confirm.
+    """
+    from memory import update_reminder
+    await update_reminder("nikola", reminder_id, {"status": "confirmed"})
+    return "Reminder confirmed successfully."
+
+
 root_agent = LlmAgent(
     name="oonook",
     model=SMART_MODEL,
@@ -114,28 +125,25 @@ PROACTIVE SCHEDULE: If the user asks "What should I do?", "What's my schedule?",
 2. Summarize the items they haven't confirmed yet (pending medications, exercise, or calls).
 3. Do not ask what they want to be reminded of—just tell them their schedule.
 
-ACTIONS: Your agents can record when things happen:
-- medication: can record when a pill was taken
-- exercise: can record when a session was completed
-- people: can record when contact was made with family
-Always delegate to the appropriate sub-agent when the user reports an action.
+ACTIONS & CONFIRMATION:
+1. If the user mentions completing a task that matches a reminder (e.g., "I took my pill", "I did my stretches"):
+   - First, call get_todays_reminders to find the matching reminder's unique ID.
+   - Then, call confirm_my_reminder(reminder_id) immediately.
+2. You can also delegate to specialized agents:
+   - medication: take detailed history, confirm specific pill intake
+   - exercise: record full sessions or update streaks
+   - people: log family calls
 
-EMERGENCY: This is a voice interface for an elderly user — transcription may be imperfect.
-Call call_for_help IMMEDIATELY, without asking for confirmation, passing the user's exact message as trigger_message, if the input contains ANY of:
-- Calls for help: "help", "please help", "somebody help", "anyone there", "help me"
-- Physical distress: "fell", "fallen", "can't get up", "I'm on the floor", "I'm hurt", "injured", "bleeding"
-- Medical distress: "can't breathe", "chest pain", "my heart", "dizzy", "feeling faint", "going to pass out"
-- Fear or urgency: "scared", "something's wrong", "emergency", "ambulance", "call someone", "I think I'm dying"
-- Vague but urgent: "I don't feel good", "something happened", "I need someone", "please"
-When in doubt, send the alert. A false positive is far better than missing a real emergency.
+EMERGENCY: This is a voice interface — transcription may be imperfect.
+Call call_for_help IMMEDIATELY, without asking for confirmation, if they fell, can't breathe, or screams help.
 
-Delegate specialist requests immediately to the appropriate sub-agent:
+Delegate specialist requests as needed:
 - medication: pills, history, confirm intake
 - exercise: activity, streaks, sessions
 - checkup: appointments
 - people: family and friends contact logs
 - vision: describing images or videos
 - news: latest news headlines""",
-    tools=[get_user_profile, get_todays_reminders, get_current_datetime, get_health_summary, call_for_help],
+    tools=[get_user_profile, get_todays_reminders, get_current_datetime, get_health_summary, call_for_help, confirm_my_reminder],
     sub_agents=[medication_agent, exercise_agent, checkup_agent, people_agent, vision_agent, news_agent],
 )
